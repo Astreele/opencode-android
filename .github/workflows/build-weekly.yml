@@ -100,6 +100,17 @@ jobs:
       - name: Install host deps
         run: sudo apt-get update && sudo apt-get install -y wget unzip xz-utils dpkg-dev
 
+      - name: Free runner disk (early)
+        # GH runners ship GBs of unused tooling; this build additionally needs
+        # NDK + Rust + all-platform node_modules before the final cleanup runs.
+        run: |
+          df -h / /tmp
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost \
+            /usr/share/swift /opt/microsoft
+          sudo docker image prune --all --force 2>/dev/null || true
+          df -h / /tmp
+
       - name: Select renderer lib (vendored, or build)
         id: lib
         env:
@@ -244,6 +255,15 @@ jobs:
           git add "$PTY_BIN" "$PTY_BIN.sha256" "$RUSTPTY_SO" "$RUSTPTY_SO.sha256"
           git commit -m "vendor pty ${PTY_VERSION} + rust_pty ${BUN_PTY_VERSION} android-aarch64 (CI-built)" || echo "nothing to commit"
           git push
+
+      - name: Clean Rust build dirs (early, before embed install)
+        # cargo target/ dirs are GBs; the all-platform bun install below needs
+        # room (workerd/darwin/win prebuilds). Final cleanup repeats this.
+        if: steps.pty.outputs.mode == 'build'
+        run: |
+          rm -rf work/opencode-pty-*/target work/bun-pty-*/rust-pty/target ~/.cargo/registry/cache
+          rm -f /tmp/ndk.zip /tmp/zig.tar.xz
+          df -h / /tmp
 
       - name: Fetch embed deps (all-platform native packages)
         # build.ts embeds @opentui/core-linux-arm64-musl and
