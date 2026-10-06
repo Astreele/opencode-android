@@ -43,7 +43,7 @@ jobs:
         run: |
           TAG="${INPUT_TAG}"
           if [ -z "$TAG" ]; then
-            TAG=$(curl -fsSL "https://api.github.com/repos/${REPO_UPSTREAM}/tags?per_page=100" | \
+            TAG=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${REPO_UPSTREAM}/tags?per_page=100" | \
               python3 -c "import json,sys; print(sorted([t['name'] for t in json.load(sys.stdin) if t['name'].startswith('v2.')], key=lambda v: [int(x) for x in v[1:].split('.')])[-1])")
           fi
           echo "upstream_tag=$TAG" >> "$GITHUB_OUTPUT"
@@ -181,8 +181,10 @@ jobs:
           test "$(bun --version)" = "${BUN_VERSION}"
 
       - name: Check Bun android base exists
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          curl -fsSL "https://api.github.com/repos/oven-sh/bun/releases/tags/bun-v${BUN_VERSION}" | \
+          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/oven-sh/bun/releases/tags/bun-v${BUN_VERSION}" | \
             grep -q "bun-linux-aarch64-android.zip" || \
             { echo "bun v${BUN_VERSION} has no android base binary" >&2; exit 1; }
 
@@ -332,6 +334,9 @@ jobs:
 
       - name: Build CLI (android)
         # --skip-install: embed deps were fetched verbatim in the step above.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           export PATH="$HOME/.bun/bin:$PATH"
           export BUN_COMPILE_RELEASE OPENCODE_VERSION OPENCODE_CHANNEL
