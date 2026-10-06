@@ -152,6 +152,21 @@ jobs:
           REPO_ROOT: ${{ github.workspace }}
         run: bash scripts/build-libopentui-ci.sh
 
+      - name: Vendor the built lib (commit back to repo)
+        # First build for a new opentui version lands here; every later run
+        # (weekly or manual) reuses vendor/ and skips the source build.
+        # No push trigger on this workflow, so this cannot self-trigger.
+        if: steps.lib.outputs.mode == 'build'
+        run: |
+          VENDOR="vendor/libopentui-${OPENTUI_VERSION}-android-aarch64.so"
+          cp -v out/libopentui.so "$VENDOR"
+          (cd vendor && sha256sum "$(basename "$VENDOR")" > "$(basename "$VENDOR").sha256")
+          git config user.name "opencode-android-bot"
+          git config user.email "opencode-android-bot@users.noreply.github.com"
+          git add "$VENDOR" "$VENDOR.sha256"
+          git commit -m "vendor libopentui ${OPENTUI_VERSION} android-aarch64 (CI-built)" || echo "nothing to commit"
+          git push
+
       - name: Fetch embed deps (all-platform native packages)
         # build.ts embeds @opentui/core-linux-arm64-musl at compile time, but
         # only an --os="*"/--cpu="*" install materializes that dir. Do it here
