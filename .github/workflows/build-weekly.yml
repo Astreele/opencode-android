@@ -128,6 +128,23 @@ jobs:
           export PATH="$HOME/.bun/bin:$PATH"
           python3 scripts/patch-opentui-loader.py upstream
 
+      - name: Build libopentui.so (android)
+        env:
+          REPO_ROOT: ${{ github.workspace }}
+        run: bash scripts/build-libopentui-ci.sh
+
+      - name: Swap CI bionic lib into the npm musl slot (embed pure bionic)
+        # The CLI bundler statically embeds @opentui/core-linux-arm64-musl.
+        # Overwriting that file with our bionic build makes the binary
+        # self-contained: no musl bytes, no runtime override needed.
+        run: |
+          MUSL_PKG=$(ls -d upstream/node_modules/.bun/@opentui+core-linux-arm64-musl@*/node_modules/@opentui/core-linux-arm64-musl)
+          cp -v out/libopentui.so "$MUSL_PKG/libopentui.so"
+          readelf -d "$MUSL_PKG/libopentui.so" | grep NEEDED
+          if nm -D -u "$MUSL_PKG/libopentui.so" | grep -q "__errno_location"; then
+            echo "musl-ism leaked into staged lib" >&2; exit 1
+          fi
+
       - name: Build CLI (android)
         # NOTE: no --skip-install: this step's internal
         # `bun install --os="*" --cpu="*"` fetches the platform opentui
@@ -139,10 +156,14 @@ jobs:
           bun run script/build.ts --target=opencode-linux-arm64-android --skip-web-ui --outdir="$GITHUB_WORKSPACE/dist/cli"
           ls -lh "$GITHUB_WORKSPACE/dist/cli/cli-linux-arm64-android/bin/opencode"
 
-      - name: Build libopentui.so (android)
-        env:
-          REPO_ROOT: ${{ github.workspace }}
-        run: bash scripts/build-libopentui-ci.sh
+      - name: Free disk (node_modules, caches, archives)
+        # Both builds are done; node_modules + bun/zig caches are GBs we no
+        # longer need, and the 166M binary gets staged 3x during packaging.
+        run: |
+          df -h / /tmp
+          rm -rf upstream/node_modules upstream/.git dist/cli/.bun \
+            /tmp/zig.tar.xz /tmp/ndk.zip ~/.bun/install/cache ~/.cache/zig
+          df -h / /tmp
 
       - name: Package (zip, deb, pacman)
         env:

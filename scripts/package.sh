@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
+# RUNS ON: Linux x86_64 CI runner (NOT on Termux, NOT on device).
 # Package the android build: zip + Termux deb + pacman archive + SHA256SUMS.
+# (The Termux paths inside are install *targets*, not the build host.)
 # Env: REPO_ROOT, UPSTREAM_TAG (e.g. v2.0.24).
-# Inputs: $WORKSPACE/dist/cli/cli-linux-arm64-android/bin/opencode (from build),
-#         $REPO_ROOT/out/libopentui.so (from lib build).
+# Inputs: $WORKSPACE/dist/cli/cli-linux-arm64-android/bin/opencode (from build).
+# The renderer is embedded in the binary (bionic lib swapped into the npm musl
+# slot pre-build), so packages carry no sidecar .so.
 set -euo pipefail
 
 REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
@@ -13,9 +16,7 @@ UPSTREAM_TAG="${UPSTREAM_TAG:?set UPSTREAM_TAG, e.g. v2.0.24}"
 VER="${UPSTREAM_TAG#v}"
 
 CLI_BIN="$WORKSPACE/dist/cli/cli-linux-arm64-android/bin/opencode"
-LIB="$OUT/libopentui.so"
 test -x "$CLI_BIN" || { echo "missing CLI binary: $CLI_BIN" >&2; exit 1; }
-test -f "$LIB" || { echo "missing lib: $LIB" >&2; exit 1; }
 mkdir -p "$OUT"
 
 STAGE="$WORK/flat"
@@ -29,10 +30,6 @@ set -eu
 SELF="$(readlink -f "$0" 2>/dev/null || echo "$0")"
 DIR="$(CDPATH= cd -- "$(dirname "$SELF")" && pwd)"
 export PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
-if [ -f "$PREFIX/libexec/opencode2/otui-assets/@opentui/core-linux-arm64-musl/libopentui.so" ]; then
-    export OTUI_ASSET_ROOT="$PREFIX/libexec/opencode2/otui-assets"
-fi
-export LD_LIBRARY_PATH="$PREFIX/libexec/opencode2${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 # @parcel/watcher ships no Android binding; the build embeds a stub instead.
 export OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER="${OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER:-true}"
 for candidate in \
@@ -49,29 +46,30 @@ exit 127
 WEOF
 chmod 755 "$STAGE/opencode2"
 cp -f "$CLI_BIN" "$STAGE/opencode2.bin"
-cp -f "$LIB" "$STAGE/libopentui.so"
 chmod 755 "$STAGE/opencode2.bin"
+# NOTE: packages carry no sidecar libs. The renderer is embedded in the
+# binary (bionic lib swapped into the npm musl slot pre-build).
 
 echo "==> zip"
 ZIP="$OUT/opencode2-${VER}-android-aarch64.zip"
-(cd "$STAGE" && zip -9 "$ZIP" opencode2 opencode2.bin libopentui.so >/dev/null)
+(cd "$STAGE" && zip -9 "$ZIP" opencode2 opencode2.bin >/dev/null)
 ls -lh "$ZIP"
 
 echo "==> deb + pacman (Termux layouts)"
 PKGROOT="$WORK/pkg"
 rm -rf "$PKGROOT"
 mkdir -p "$PKGROOT/data/data/com.termux/files/usr/bin"
-mkdir -p "$PKGROOT/data/data/com.termux/files/usr/libexec/opencode2/otui-assets/@opentui/core-linux-arm64-musl"
+mkdir -p "$PKGROOT/data/data/com.termux/files/usr/libexec/opencode2"
 cp "$STAGE/opencode2" "$PKGROOT/data/data/com.termux/files/usr/bin/opencode2"
 cp "$STAGE/opencode2.bin" "$PKGROOT/data/data/com.termux/files/usr/libexec/opencode2/opencode2.bin"
-cp "$STAGE/libopentui.so" "$PKGROOT/data/data/com.termux/files/usr/libexec/opencode2/otui-assets/@opentui/core-linux-arm64-musl/libopentui.so"
 chmod 755 "$PKGROOT/data/data/com.termux/files/usr/bin/opencode2" "$PKGROOT/data/data/com.termux/files/usr/libexec/opencode2/opencode2.bin"
 
 DEB="$OUT/opencode2_${VER}_aarch64.deb"
 DEBDIR="$WORK/deb"
 rm -rf "$DEBDIR"
 mkdir -p "$DEBDIR/DEBIAN"
-cp -a "$PKGROOT/data" "$DEBDIR/data"
+# hardlink, not copy: the 166M binary already exists twice at this point
+cp -al "$PKGROOT/data" "$DEBDIR/data"
 INSTALLED_SIZE=$(du -sk "$DEBDIR/data" | cut -f1)
 cat > "$DEBDIR/DEBIAN/control" <<DEOF
 Package: opencode2

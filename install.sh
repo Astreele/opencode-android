@@ -1,4 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
+# RUNS ON: native Termux on device (aarch64 Android). Do NOT run in proot,
+# do NOT run on CI runners.
 # Install opencode2 (pure Android/aarch64 OpenCode) in native Termux.
 # Usage: bash install.sh  (or bash <(curl -fsSL <raw-url>/install.sh))
 # Env: VERSION (e.g. v2.0.24-android) to pin, REPO (default below).
@@ -49,8 +51,6 @@ unzip -o -q "$ZIP"
 mkdir -p "$PREFIX/bin" "$PREFIX/libexec/opencode2"
 cp -f opencode2 "$PREFIX/bin/opencode2"
 cp -f opencode2.bin "$PREFIX/libexec/opencode2/opencode2.bin"
-mkdir -p "$PREFIX/libexec/opencode2/otui-assets/@opentui/core-linux-arm64-musl"
-cp -f libopentui.so "$PREFIX/libexec/opencode2/otui-assets/@opentui/core-linux-arm64-musl/libopentui.so"
 chmod 755 "$PREFIX/bin/opencode2" "$PREFIX/libexec/opencode2/opencode2.bin"
 ln -sf "$PREFIX/bin/opencode2" "$PREFIX/bin/opencode" 2>/dev/null || true
 ok "files installed"

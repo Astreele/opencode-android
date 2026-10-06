@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# RUNS ON: Linux x86_64 CI runner (NOT on Termux, NOT on device).
 # Build libopentui.so for Android aarch64 (Linux x86_64 CI).
 # Self-contained: clones anomalyco/opentui at $OPENTUI_VERSION, applies the
 # android patch, merges the NDK sysroot, and runs the Zig build.

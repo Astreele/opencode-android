@@ -3,6 +3,13 @@
 Pure Android/aarch64 builds of upstream OpenCode, for native Termux.
 Installs side-by-side as `opencode2` (v1 `opencode` untouched).
 
+## Which script runs where
+
+- **CI runner** (Linux x86_64, weekly workflow): everything under
+  `.github/` and `scripts/` — each file says `RUNS ON` in its header.
+  Termux paths there are install *targets*, never the build host.
+- **Device** (native Termux, never proot): `install.sh` only.
+
 ## Install (native Termux, NOT inside proot)
 
 ```sh

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# RUNS ON: Linux x86_64 CI runner (NOT on Termux, NOT on device).
 """Map Bun's Android runtime onto the linux-arm64-musl opentui asset.
 
 Bun's Android build reports process.platform === "android", which stock

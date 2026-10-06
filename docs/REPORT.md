@@ -106,19 +106,22 @@ Upstream repo: `anomalyco/opencode`, tag `v2.0.24`
     Android libc** — pass `zig build --libc <ndk-based-libc.txt>`
     (guysoft's script creates that file but never passes it).
 
-## 6. Final architecture
+## 6. Final architecture (pure bionic, no shims)
 
 ```
 opencode2 (wrapper, sh)
-  env: OTUI_ASSET_ROOT, LD_LIBRARY_PATH, OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER
-  └─ opencode2.bin (166M, bionic, Bun android base + embedded musl opentui,
-                     android→musl loader mapping, watcher stub, no pty)
-  └─ otui-assets/@opentui/core-linux-arm64-musl/libopentui.so
-       (CI-built TRUE bionic 0.5.14: NEEDED libm/libc/libdl, 425/425 symbols)
+  env: OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER only
+  └─ opencode2.bin (bionic, Bun android base)
+       ├─ JS/TS app + watcher stub + android→musl loader mapping
+       └─ EMBEDDED renderer: CI-built true-bionic libopentui.so
+            (swapped into the npm musl slot pre-build, so the bundler
+             picks it up; NEEDED libm/libc/libdl, 425/425 symbols)
 ```
 
-Deliberately disabled (upstream ships no Android builds): file watcher,
-pty bindings. Everything else (server, providers, `run`, `auth`, TUI) works.
+No sidecar `.so`, no `LD_PRELOAD`, no `OTUI_ASSET_ROOT`, no patchelf in the
+shipped packages: `opencode2` + `opencode2.bin` only. (An earlier revision
+used an `OTUI_ASSET_ROOT` override with a musl lib + 4-symbol shim; retired
+once the CI bionic lib proved out — see failure log §5.7–5.9.)
 
 ## 7. Maintenance
 
