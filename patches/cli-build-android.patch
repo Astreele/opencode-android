@@ -1,0 +1,72 @@
+diff --git a/packages/cli/script/build.ts b/packages/cli/script/build.ts
+index f55d890..3df1ad0 100755
+--- a/packages/cli/script/build.ts
++++ b/packages/cli/script/build.ts
+@@ -33,7 +33,7 @@ const releaseAssets = new Map<string, Promise<Map<string, string>>>()
+ const allTargets: {
+   os: string
+   arch: "arm64" | "x64"
+-  abi?: "musl"
++  abi?: "musl" | "android"
+   avx2?: false
+ }[] = [
+   { os: "linux", arch: "arm64" },
+@@ -42,6 +42,7 @@ const allTargets: {
+   { os: "linux", arch: "arm64", abi: "musl" },
+   { os: "linux", arch: "x64", abi: "musl" },
+   { os: "linux", arch: "x64", abi: "musl", avx2: false },
++  { os: "linux", arch: "arm64", abi: "android" },
+   { os: "darwin", arch: "arm64" },
+   { os: "darwin", arch: "x64" },
+   { os: "darwin", arch: "x64", avx2: false },
+@@ -112,7 +113,12 @@ export default { path: file, version: ${JSON.stringify(opencodePty.version)}, sh
+     name: "parcel-watcher-binding",
+     setup(build) {
+       build.onLoad({ filter: /filesystem[/\\]watcher-binding\.ts$/ }, () => ({
+-        contents: `export default () => require(${JSON.stringify(parcelWatcherPackage)})`,
++        // Android has no @parcel/watcher native binding; the wrapper forces
++        // OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER=true so this stub is never called.
++        contents:
++          item.abi === "android"
++            ? `export default () => { throw new Error("file watcher disabled on Android") }`
++            : `export default () => require(${JSON.stringify(parcelWatcherPackage)})`,
+         loader: "js",
+       }))
+     },
+@@ -155,8 +161,12 @@ export default { path: file, version: ${JSON.stringify(opencodePty.version)}, sh
+       OPENCODE_ARTIFACT: `'cli'`,
+       OPENCODE_LIBC: item.os === "linux" ? `'${item.abi ?? "glibc"}'` : "undefined",
+       // FFF_LIBC selects the fff native lib variant: "musl" or "gnu".
+-      FFF_LIBC: item.os === "linux" ? `'${item.abi ?? "gnu"}'` : "undefined",
+-      ...(item.os === "linux" ? { "process.env.OPENTUI_LIBC": JSON.stringify(item.abi ?? "glibc") } : {}),
++      // Android (bionic) uses musl-static fff build; glibc binary cannot run on Android.
++      FFF_LIBC: item.os === "linux" ? `'${item.abi === "android" ? "musl" : (item.abi ?? "gnu")}'` : "undefined",
++      // Android (bionic): embed the musl-static opentui build; its only NEEDED is
++      // bare libc.so, which Android's linker resolves to bionic. Never "android":
++      // the runtime loader throws for anything but unset/glibc/musl.
++      ...(item.os === "linux" ? { "process.env.OPENTUI_LIBC": JSON.stringify(item.abi === "android" ? "musl" : (item.abi ?? "glibc")) } : {}),
+     },
+   })
+ 
+diff --git a/packages/cli/script/opencode-pty.ts b/packages/cli/script/opencode-pty.ts
+index ae3ec30..4e87abb 100644
+--- a/packages/cli/script/opencode-pty.ts
++++ b/packages/cli/script/opencode-pty.ts
+@@ -12,7 +12,7 @@ export type OpencodePtyAsset = {
+ type Target = {
+   readonly platform: string
+   readonly arch: string
+-  readonly libc?: "glibc" | "musl"
++  readonly libc?: "glibc" | "musl" | "android"
+ }
+ 
+ const core = createRequire(path.resolve(import.meta.dirname, "../../core/package.json"))
+@@ -21,6 +21,8 @@ const pty = createRequire(core.resolve("@opencode-ai/pty/package.json"))
+ export async function resolveOpencodePty(target: Target): Promise<OpencodePtyAsset | undefined> {
+   if (target.platform !== "darwin" && target.platform !== "linux") return undefined
+   if (target.arch !== "arm64" && target.arch !== "x64") return undefined
++  // Android has no prebuilt @opencode-ai/pty binding; embed nothing (pty disabled on Android).
++  if (target.libc === "android") return undefined
+ 
+   const suffix = [target.platform, target.arch, target.platform === "linux" ? (target.libc ?? "glibc") : undefined]
+     .filter(Boolean)

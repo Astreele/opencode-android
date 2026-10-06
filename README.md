@@ -1,0 +1,40 @@
+# opencode-android
+
+Pure Android/aarch64 builds of upstream OpenCode, for native Termux.
+Installs side-by-side as `opencode2` (v1 `opencode` untouched).
+
+## Install (native Termux, NOT inside proot)
+
+```sh
+bash <(curl -fsSL https://raw.githubusercontent.com/OWNER/opencode-android/main/install.sh)
+```
+
+First set `OWNER` to your repo path in `install.sh` (the `REPO` default),
+or run with `REPO=you/opencode-android`.
+
+Then:
+
+```sh
+opencode2 auth   # connect a provider
+opencode2        # TUI
+```
+
+## Releases
+
+Built every Monday 03:00 UTC from the latest stable upstream `v2.*` tag
+(`anomalyco/opencode`), plus manual runs. Each release publishes:
+`opencode2-<ver>-android-aarch64.zip`, Termux `.deb`, pacman `.pkg.tar.xz`,
+`SHA256SUMS`. A release is created only when upstream moved.
+
+## How it works
+
+- CLI: `bun build --compile` with Bun's official `android` base binary,
+  plus small patches (`patches/`) mapping the build onto Android
+  (watcher stub, pty skip, musl `fff`/opentui selection, loader
+  android→linux-musl mapping).
+- Renderer: `libopentui.so` cross-compiled for bionic with Zig 0.16 + NDK
+  r28, selected at runtime via `OTUI_ASSET_ROOT`.
+- File watcher and pty bindings stay disabled (upstream ships no Android
+  builds of those; same tradeoff as other Termux ports).
+
+Full story: [`docs/REPORT.md`](docs/REPORT.md).

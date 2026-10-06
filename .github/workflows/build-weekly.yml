@@ -1,0 +1,171 @@
+name: build-opencode-android
+
+# Weekly: track latest stable upstream opencode v2 and publish pure
+# Termux/Android-arm64 builds (side-by-side `opencode2`, never `opencode`).
+on:
+  schedule:
+    - cron: '0 3 * * 1' # Mondays 03:00 UTC
+  workflow_dispatch:
+    inputs:
+      upstream_tag:
+        description: 'Upstream tag to build (e.g. v2.0.24). Empty = latest stable v2.'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+env:
+  ZIG_VERSION: 0.16.0
+  NDK_VERSION: r28b
+  NDK_DIR: /opt/android-ndk
+  REPO_UPSTREAM: anomalyco/opencode
+
+jobs:
+  resolve:
+    runs-on: ubuntu-24.04
+    outputs:
+      upstream_tag: ${{ steps.ver.outputs.upstream_tag }}
+      release_tag: ${{ steps.ver.outputs.release_tag }}
+      should_build: ${{ steps.ver.outputs.should_build }}
+      opentui_version: ${{ steps.ver.outputs.opentui_version }}
+      bun_version: ${{ steps.ver.outputs.bun_version }}
+    steps:
+      - name: Resolve versions
+        id: ver
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.upstream_tag }}
+        run: |
+          TAG="${INPUT_TAG}"
+          if [ -z "$TAG" ]; then
+            TAG=$(curl -fsSL "https://api.github.com/repos/${REPO_UPSTREAM}/tags?per_page=100" | \
+              python3 -c "import json,sys; print(sorted([t['name'] for t in json.load(sys.stdin) if t['name'].startswith('v2.')], key=lambda v: [int(x) for x in v[1:].split('.')])[-1])")
+          fi
+          echo "upstream_tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "release_tag=${TAG}-android" >> "$GITHUB_OUTPUT"
+          PKG=$(curl -fsSL "https://raw.githubusercontent.com/${REPO_UPSTREAM}/${TAG}/package.json")
+          echo "$PKG" | python3 -c "import json,sys; d=json.load(sys.stdin); print('opentui_version='+d['workspaces']['catalog']['@opentui/core']); print('bun_version='+d['packageManager'].split('@')[1])" >> "$GITHUB_OUTPUT"
+          if gh release view "${TAG}-android" >/dev/null 2>&1; then
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+            echo "release ${TAG}-android already exists, skipping"
+          else
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: resolve
+    if: needs.resolve.outputs.should_build == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      UPSTREAM_TAG: ${{ needs.resolve.outputs.upstream_tag }}
+      RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
+      OPENTUI_VERSION: ${{ needs.resolve.outputs.opentui_version }}
+      BUN_VERSION: ${{ needs.resolve.outputs.bun_version }}
+      OPENCODE_VERSION: ${{ needs.resolve.outputs.upstream_tag }}-android-termux.1
+      OPENCODE_CHANNEL: android-termux
+      BUN_COMPILE_RELEASE: bun-v${{ needs.resolve.outputs.bun_version }}
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install host deps
+        run: sudo apt-get update && sudo apt-get install -y wget unzip xz-utils dpkg-dev patchelf
+
+      - name: Install Zig
+        run: |
+          cd /tmp
+          wget -q "https://ziglang.org/download/${ZIG_VERSION}/zig-x86_64-linux-${ZIG_VERSION}.tar.xz" -O zig.tar.xz
+          tar xf zig.tar.xz
+          echo "/tmp/zig-x86_64-linux-${ZIG_VERSION}" >> "$GITHUB_PATH"
+          export PATH="/tmp/zig-x86_64-linux-${ZIG_VERSION}:$PATH"
+          zig version
+
+      - name: Install Android NDK
+        run: |
+          if [ ! -d "$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64" ]; then
+            cd /tmp
+            wget -q "https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip" -O ndk.zip
+            sudo mkdir -p /opt
+            sudo unzip -q ndk.zip -d /opt/
+            sudo mv "/opt/android-ndk-${NDK_VERSION}" "$NDK_DIR"
+          fi
+
+      - name: Install host Bun
+        run: |
+          curl -fsSL https://bun.sh/install | bash -s "bun-v${BUN_VERSION}"
+          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.bun/bin:$PATH"
+          test "$(bun --version)" = "${BUN_VERSION}"
+
+      - name: Check Bun android base exists
+        run: |
+          curl -fsSL "https://api.github.com/repos/oven-sh/bun/releases/tags/bun-v${BUN_VERSION}" | \
+            grep -q "bun-linux-aarch64-android.zip" || \
+            { echo "bun v${BUN_VERSION} has no android base binary" >&2; exit 1; }
+
+      - name: Clone upstream + apply CLI patch
+        run: |
+          git clone --depth 1 --branch "${UPSTREAM_TAG}" https://github.com/${REPO_UPSTREAM}/opencode.git upstream
+          cd upstream
+          git apply --check ../patches/cli-build-android.patch
+          git apply ../patches/cli-build-android.patch
+
+      - name: Install JS deps
+        run: |
+          export PATH="$HOME/.bun/bin:$PATH"
+          cd upstream
+          bun install --ignore-scripts
+          # harden against truncated extraction (seen with some fetch paths)
+          for f in node_modules/.bun/@opentelemetry+sdk-metrics@*/node_modules/@opentelemetry/sdk-metrics/build/esm/export/AggregationTemporality.js \
+                   node_modules/.bun/@opentelemetry+resources@*/node_modules/@opentelemetry/resources/build/src/detect-resources.js; do
+            if ! ls $f >/dev/null 2>&1; then echo "bun install looks truncated ($f)"; exit 1; fi
+          done
+
+      - name: Patch opentui loader for Android
+        run: |
+          export PATH="$HOME/.bun/bin:$PATH"
+          python3 scripts/patch-opentui-loader.py upstream
+
+      - name: Build CLI (android)
+        # NOTE: no --skip-install: this step's internal
+        # `bun install --os="*" --cpu="*"` fetches the platform opentui
+        # packages (e.g. core-linux-arm64-musl) that get embedded.
+        run: |
+          export PATH="$HOME/.bun/bin:$PATH"
+          export BUN_COMPILE_RELEASE OPENCODE_VERSION OPENCODE_CHANNEL
+          cd upstream/packages/cli
+          bun run script/build.ts --target=opencode-linux-arm64-android --skip-web-ui --outdir="$GITHUB_WORKSPACE/dist/cli"
+          ls -lh "$GITHUB_WORKSPACE/dist/cli/cli-linux-arm64-android/bin/opencode"
+
+      - name: Build libopentui.so (android)
+        env:
+          REPO_ROOT: ${{ github.workspace }}
+        run: bash scripts/build-libopentui-ci.sh
+
+      - name: Package (zip, deb, pacman)
+        env:
+          UPSTREAM_TAG: ${{ needs.resolve.outputs.upstream_tag }}
+        run: bash scripts/package.sh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.resolve.outputs.release_tag }}
+          path: out/*
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.resolve.outputs.release_tag }}
+          name: OpenCode ${{ needs.resolve.outputs.upstream_tag }} for Termux
+          body: |
+            Pure Android/aarch64 build of upstream OpenCode `${{ needs.resolve.outputs.upstream_tag }}`.
+            Installs side-by-side as `opencode2` (never touches v1 `opencode`).
+            Built weekly from https://github.com/anomalyco/opencode (see `docs/REPORT.md`).
+          files: |
+            out/*.zip
+            out/*.deb
+            out/*.pkg.tar.xz
+            out/SHA256SUMS
