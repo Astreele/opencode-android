@@ -1,7 +1,8 @@
 # Building pure-Android OpenCode for Termux: full report
 
 Target: latest stable upstream OpenCode v2 running **natively** in Termux
-(aarch64 Android, no proot), installed side-by-side as `opencode2`.
+(aarch64 Android, no proot), installed as `opencode2` (the installer links
+`opencode` → `opencode2`, so v2 replaces v1 as the default).
 Result: `opencode v2.0.24-android-termux.1` with working TUI.
 
 ## 1. Environment
@@ -46,6 +47,8 @@ Upstream repo: `anomalyco/opencode`, tag `v2.0.24`
    - `resolveOpencodePty`: android→`musl` slot (CI swaps the android-built
      daemon into `@opencode-ai/pty-linux-arm64-musl`; the musl static binary
      runs on Android, but a rebuild is still needed for the TMPDIR socket fix);
+   - `FFF_LIBC`: android→`"musl"` (harmless: the linux branch is dead on
+     android at runtime; the real fix is the fff embedded patch below).
    - `FFF_LIBC` and compile-time `process.env.OPENTUI_LIBC`: android→`"musl"`.
      Never `"android"`: the runtime loader **throws** for anything but
      unset/`glibc`/`musl`, so the first build's TUI was dead on arrival
@@ -59,6 +62,12 @@ Upstream repo: `anomalyco/opencode`, tag `v2.0.24`
    not the monorepo): `socket_root()` hardcoded `/tmp`, which is not writable
    on Android (owned `shell`, mode `0711`). Respect absolute `$TMPDIR`
    (Termux sets `$PREFIX/tmp`); socket path still fits `sun_path` (~89 chars).
+5. `patch-fff-embedded.py` (rewrite of installed `@ff-labs/fff-bun`, like the
+   loader patch): `src/embedded.ts` had no android branch, so the build fell
+   back to the musl `libfff_c.so` — whose undefined `__errno_location`/`bcmp`
+   fail `dlopen` on bionic (file finder silently dead). Points the android
+   branch at the official `@ff-labs/fff-bin-android-arm64` (pure bionic,
+   loads clean) by absolute path.
 3. Loader mapping (`scripts/patch-opentui-loader.py`, anchor-based so chunk
    filename hashes don't matter): Bun's Android runtime reports
    `process.platform === "android"`, unknown to stock `@opentui/core`

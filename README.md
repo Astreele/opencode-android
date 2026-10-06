@@ -1,7 +1,8 @@
 # opencode-android
 
 Pure Android/aarch64 builds of upstream OpenCode, for native Termux.
-Installs side-by-side as `opencode2` (v1 `opencode` untouched).
+Installs as `opencode2`; the installer also links `opencode` → `opencode2`,
+so v2 becomes the default `opencode` (v1 is replaced, not kept alongside).
 
 ## Which script runs where
 
@@ -38,8 +39,13 @@ Built every Monday 03:00 UTC from the latest stable upstream `v2.*` tag
 - CLI: `bun build --compile` with Bun's official `android` base binary,
   plus small patches (`patches/`) mapping the build onto Android
   (watcher `android-arm64` binding, pty `android→musl` slot mapping,
-  musl `fff`/opentui selection, loader android→linux-musl mapping,
-  `getBackend` android→inotify).
+  official android `libfff_c.so`, musl opentui selection,
+  loader android→linux-musl mapping, `getBackend` android→inotify).
+- Renderer: `libopentui.so` cross-compiled for bionic with Zig 0.16 + NDK
+  r28, **vendored per version** under `vendor/` and embedded into the CLI
+  (source builds run only when a new opentui version has no vendored lib —
+  see `vendor/README.md`). No android asset exists upstream, so the musl
+  slot + loader mapping is the only embedding path (by design).
 - Renderer: `libopentui.so` cross-compiled for bionic with Zig 0.16 + NDK
   r28, **vendored per version** under `vendor/` and embedded into the CLI
   (source builds run only when a new opentui version has no vendored lib —

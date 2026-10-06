@@ -52,6 +52,7 @@ mkdir -p "$PREFIX/bin" "$PREFIX/libexec/opencode2"
 cp -f opencode2 "$PREFIX/bin/opencode2"
 cp -f opencode2.bin "$PREFIX/libexec/opencode2/opencode2.bin"
 chmod 755 "$PREFIX/bin/opencode2" "$PREFIX/libexec/opencode2/opencode2.bin"
+# Intentional: v2 becomes the default `opencode` (side-by-side not promised).
 ln -sf "$PREFIX/bin/opencode2" "$PREFIX/bin/opencode" 2>/dev/null || true
 ok "files installed"
 

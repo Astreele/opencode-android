@@ -302,6 +302,30 @@ jobs:
             ls -d node_modules/@opencode-ai/pty-linux-arm64-musl
           ls node_modules/.bun/bun-pty@*/node_modules/bun-pty/rust-pty/target/release/librust_pty_arm64.so 2>/dev/null || \
             ls node_modules/bun-pty/rust-pty/target/release/librust_pty_arm64.so
+          if ! ls -d node_modules/.bun/@ff-labs+fff-bin-android-arm64@*/node_modules/@ff-labs/fff-bin-android-arm64 2>/dev/null && \
+             ! ls -d node_modules/@ff-labs/fff-bin-android-arm64 2>/dev/null; then
+            FVER=$(python3 -c "import json; print(json.load(open('packages/core/package.json'))['dependencies']['@ff-labs/fff-bun'])")
+            echo "bun skipped android fff; fetching @ff-labs/fff-bin-android-arm64@$FVER"
+            mkdir -p node_modules/@ff-labs/fff-bin-android-arm64
+            curl -fsSL "https://registry.npmjs.org/@ff-labs/fff-bin-android-arm64/-/fff-bin-android-arm64-${FVER}.tgz" | \
+              tar xz -C node_modules/@ff-labs/fff-bin-android-arm64 --strip-components=1
+          fi
+          ls -d node_modules/.bun/@ff-labs+fff-bin-android-arm64@*/node_modules/@ff-labs/fff-bin-android-arm64 2>/dev/null || \
+            ls -d node_modules/@ff-labs/fff-bin-android-arm64
+
+      - name: Patch fff embedded lib for Android
+        # fff-bun embeds the musl libfff_c.so (dlopen fails on bionic:
+        # __errno_location/bcmp); point the android branch at the official
+        # android lib instead. Must run before the CLI build reads the file.
+        run: |
+          export PATH="$HOME/.bun/bin:$PATH"
+          python3 scripts/patch-fff-embedded.py upstream
+          FFBLIB=$(ls upstream/node_modules/.bun/@ff-labs+fff-bin-android-arm64@*/node_modules/@ff-labs/fff-bin-android-arm64/libfff_c.so 2>/dev/null || \
+            ls upstream/node_modules/@ff-labs/fff-bin-android-arm64/libfff_c.so)
+          readelf -d "$FFBLIB" | grep NEEDED
+          if readelf -d "$FFBLIB" | grep -q "libc.so.6"; then
+            echo "glibc-linked fff lib in android slot" >&2; exit 1
+          fi
 
       - name: Swap CI bionic lib into the npm musl slot (embed pure bionic)
         # Overwriting that file makes the binary self-contained: no musl
@@ -372,7 +396,7 @@ jobs:
           name: OpenCode ${{ needs.resolve.outputs.upstream_tag }} for Termux
           body: |
             Pure Android/aarch64 build of upstream OpenCode `${{ needs.resolve.outputs.upstream_tag }}`.
-            Installs side-by-side as `opencode2` (never touches v1 `opencode`).
+            Installs as `opencode2`; the installer links `opencode` → `opencode2` (v2 becomes default).
             Built weekly from https://github.com/anomalyco/opencode (see `docs/REPORT.md`).
           files: |
             out/*.zip
