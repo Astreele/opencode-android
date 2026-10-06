@@ -28,6 +28,7 @@ jobs:
       upstream_tag: ${{ steps.ver.outputs.upstream_tag }}
       release_tag: ${{ steps.ver.outputs.release_tag }}
       should_build: ${{ steps.ver.outputs.should_build }}
+      reset: ${{ steps.ver.outputs.reset }}
       opentui_version: ${{ steps.ver.outputs.opentui_version }}
       bun_version: ${{ steps.ver.outputs.bun_version }}
     steps:
@@ -36,6 +37,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           INPUT_TAG: ${{ inputs.upstream_tag }}
+          EVENT: ${{ github.event_name }}
         run: |
           TAG="${INPUT_TAG}"
           if [ -z "$TAG" ]; then
@@ -46,11 +48,22 @@ jobs:
           echo "release_tag=${TAG}-android" >> "$GITHUB_OUTPUT"
           PKG=$(curl -fsSL "https://raw.githubusercontent.com/${REPO_UPSTREAM}/${TAG}/package.json")
           echo "$PKG" | python3 -c "import json,sys; d=json.load(sys.stdin); print('opentui_version='+d['workspaces']['catalog']['@opentui/core']); print('bun_version='+d['packageManager'].split('@')[1])" >> "$GITHUB_OUTPUT"
-          if gh release view "${TAG}-android" >/dev/null 2>&1; then
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            # manual trigger = force rebuild, even if the release exists
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            if gh release view "${TAG}-android" >/dev/null 2>&1; then
+              echo "reset=true" >> "$GITHUB_OUTPUT"
+              echo "manual run: will delete existing release ${TAG}-android first"
+            else
+              echo "reset=false" >> "$GITHUB_OUTPUT"
+            fi
+          elif gh release view "${TAG}-android" >/dev/null 2>&1; then
             echo "should_build=false" >> "$GITHUB_OUTPUT"
+            echo "reset=false" >> "$GITHUB_OUTPUT"
             echo "release ${TAG}-android already exists, skipping"
           else
             echo "should_build=true" >> "$GITHUB_OUTPUT"
+            echo "reset=false" >> "$GITHUB_OUTPUT"
           fi
 
   build:
@@ -69,6 +82,14 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+
+      - name: Reset existing release (manual force rebuild)
+        if: needs.resolve.outputs.reset == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete "${{ needs.resolve.outputs.release_tag }}" --yes --cleanup-tag
+          echo "deleted release ${{ needs.resolve.outputs.release_tag }}"
 
       - name: Install host deps
         run: sudo apt-get update && sudo apt-get install -y wget unzip xz-utils dpkg-dev
