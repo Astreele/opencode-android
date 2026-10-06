@@ -1,0 +1,15 @@
+diff --git a/rust-pty/Cargo.toml b/rust-pty/Cargo.toml
+index 0000000..0000000 100644
+--- a/rust-pty/Cargo.toml
++++ b/rust-pty/Cargo.toml
+@@ -15,7 +15,9 @@ crate-type = ["cdylib"]
+
+ [dependencies]
+ # https://github.com/wezterm/wezterm/issues/6783
+-portable-pty = { version = "0.8.1", features = ["serde_support"] }
++# portable-pty 0.8 pulls termios/serial, which has no Android target support;
++# 0.9 uses serial2 and builds for aarch64-linux-android unchanged.
++portable-pty = { version = "0.9", features = ["serde_support"] }
+ lazy_static = "1.4"
+ crossbeam = { version = "0.8.4", features = ["crossbeam-channel"] }
+ serde = { version = "1.0", features = ["derive"] }

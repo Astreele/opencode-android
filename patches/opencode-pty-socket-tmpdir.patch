@@ -1,0 +1,19 @@
+diff --git a/src/daemon.rs b/src/daemon.rs
+index 4062ed2..c4ddd5e 100644
+--- a/src/daemon.rs
++++ b/src/daemon.rs
+@@ -349,8 +349,13 @@ mod unix {
+     }
+ 
+     // Sockets stay in /tmp so their paths fit sun_path; temp cleaners skip sockets.
++    // Termux/Android: /tmp is not writable, so respect TMPDIR when set.
+     fn socket_root() -> PathBuf {
+-        PathBuf::from("/tmp").join(format!(
++        let base = std::env::var_os("TMPDIR")
++            .map(PathBuf::from)
++            .filter(|dir| dir.is_absolute())
++            .unwrap_or_else(|| PathBuf::from("/tmp"));
++        base.join(format!(
+             "opencode-pty-{}",
+             nix::unistd::Uid::effective().as_raw()
+         ))

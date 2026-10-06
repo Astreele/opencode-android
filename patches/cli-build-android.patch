@@ -49,7 +49,7 @@ index f55d890..268f2c9 100755
    })
  
 diff --git a/packages/cli/script/opencode-pty.ts b/packages/cli/script/opencode-pty.ts
-index ae3ec30..4e87abb 100644
+index ae3ec30..becddd5 100644
 --- a/packages/cli/script/opencode-pty.ts
 +++ b/packages/cli/script/opencode-pty.ts
 @@ -12,7 +12,7 @@ export type OpencodePtyAsset = {
@@ -61,12 +61,16 @@ index ae3ec30..4e87abb 100644
  }
  
  const core = createRequire(path.resolve(import.meta.dirname, "../../core/package.json"))
-@@ -21,6 +21,8 @@ const pty = createRequire(core.resolve("@opencode-ai/pty/package.json"))
- export async function resolveOpencodePty(target: Target): Promise<OpencodePtyAsset | undefined> {
+@@ -22,7 +22,11 @@ export async function resolveOpencodePty(target: Target): Promise<OpencodePtyAss
    if (target.platform !== "darwin" && target.platform !== "linux") return undefined
    if (target.arch !== "arm64" && target.arch !== "x64") return undefined
-+  // Android has no prebuilt @opencode-ai/pty binding; embed nothing (pty disabled on Android).
-+  if (target.libc === "android") return undefined
  
-   const suffix = [target.platform, target.arch, target.platform === "linux" ? (target.libc ?? "glibc") : undefined]
+-  const suffix = [target.platform, target.arch, target.platform === "linux" ? (target.libc ?? "glibc") : undefined]
++  // Android (bionic): embed the CI-built android binary, swapped into the
++  // linux-arm64-musl npm slot pre-build (same trick as libopentui). The musl
++  // static daemon runs on Android, but its socket dir is hardcoded /tmp.
++  const effectiveLibc = target.libc === "android" ? "musl" : target.libc
++  const suffix = [target.platform, target.arch, target.platform === "linux" ? (effectiveLibc ?? "glibc") : undefined]
      .filter(Boolean)
+     .map((value) => (value === "glibc" ? "gnu" : value))
+     .join("-")

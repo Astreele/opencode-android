@@ -31,6 +31,8 @@ jobs:
       reset: ${{ steps.ver.outputs.reset }}
       opentui_version: ${{ steps.ver.outputs.opentui_version }}
       bun_version: ${{ steps.ver.outputs.bun_version }}
+      pty_version: ${{ steps.ver.outputs.pty_version }}
+      bun_pty_version: ${{ steps.ver.outputs.bun_pty_version }}
     steps:
       - name: Resolve versions
         id: ver
@@ -48,6 +50,8 @@ jobs:
           echo "release_tag=${TAG}-android" >> "$GITHUB_OUTPUT"
           PKG=$(curl -fsSL "https://raw.githubusercontent.com/${REPO_UPSTREAM}/${TAG}/package.json")
           echo "$PKG" | python3 -c "import json,sys; d=json.load(sys.stdin); print('opentui_version='+d['workspaces']['catalog']['@opentui/core']); print('bun_version='+d['packageManager'].split('@')[1])" >> "$GITHUB_OUTPUT"
+          CORE=$(curl -fsSL "https://raw.githubusercontent.com/${REPO_UPSTREAM}/${TAG}/packages/core/package.json")
+          echo "$CORE" | python3 -c "import json,sys; d=json.load(sys.stdin); print('pty_version='+d['dependencies']['@opencode-ai/pty']); print('bun_pty_version='+d['dependencies']['bun-pty'])" >> "$GITHUB_OUTPUT"
           if [ "$EVENT" = "workflow_dispatch" ]; then
             # manual trigger = force rebuild, even if the release exists
             echo "should_build=true" >> "$GITHUB_OUTPUT"
@@ -76,6 +80,8 @@ jobs:
       RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
       OPENTUI_VERSION: ${{ needs.resolve.outputs.opentui_version }}
       BUN_VERSION: ${{ needs.resolve.outputs.bun_version }}
+      PTY_VERSION: ${{ needs.resolve.outputs.pty_version }}
+      BUN_PTY_VERSION: ${{ needs.resolve.outputs.bun_pty_version }}
       OPENCODE_VERSION: ${{ needs.resolve.outputs.upstream_tag }}-android-termux.1
       OPENCODE_CHANNEL: android-termux
       BUN_COMPILE_RELEASE: bun-v${{ needs.resolve.outputs.bun_version }}
@@ -110,6 +116,24 @@ jobs:
             echo "no vendored lib for opentui ${OPENTUI_VERSION}, will build from source"
           fi
 
+      - name: Select PTY natives (vendored, or build)
+        id: pty
+        env:
+          REPO_ROOT: ${{ github.workspace }}
+        run: |
+          mkdir -p out
+          PTY_BIN="vendor/opencode-pty-${PTY_VERSION}-android-aarch64"
+          RUSTPTY_SO="vendor/librust_pty-${BUN_PTY_VERSION}-android-aarch64.so"
+          if [ -f "$PTY_BIN" ] && [ -f "$RUSTPTY_SO" ]; then
+            (cd vendor && sha256sum -c "$(basename "$PTY_BIN").sha256" "$(basename "$RUSTPTY_SO").sha256")
+            cp -v "$PTY_BIN" out/opencode-pty
+            cp -v "$RUSTPTY_SO" out/librust_pty_arm64.so
+            echo "mode=vendored" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=build" >> "$GITHUB_OUTPUT"
+            echo "no vendored pty natives for pty ${PTY_VERSION} / bun-pty ${BUN_PTY_VERSION}, will build from source"
+          fi
+
       - name: Install Zig
         if: steps.lib.outputs.mode == 'build'
         run: |
@@ -121,7 +145,7 @@ jobs:
           zig version
 
       - name: Install Android NDK
-        if: steps.lib.outputs.mode == 'build'
+        if: steps.lib.outputs.mode == 'build' || steps.pty.outputs.mode == 'build'
         run: |
           if [ ! -d "$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64" ]; then
             cd /tmp
@@ -130,6 +154,13 @@ jobs:
             sudo unzip -q ndk.zip -d /opt/
             sudo mv "/opt/android-ndk-${NDK_VERSION}" "$NDK_DIR"
           fi
+
+      - name: Install Rust Android target
+        if: steps.pty.outputs.mode == 'build'
+        run: |
+          rustup target add aarch64-linux-android
+          rustc --version
+          cargo --version
 
       - name: Install host Bun
         run: |
@@ -190,6 +221,30 @@ jobs:
           git commit -m "vendor libopentui ${OPENTUI_VERSION} android-aarch64 (CI-built)" || echo "nothing to commit"
           git push
 
+      - name: Build PTY natives (android, fallback when not vendored)
+        if: steps.pty.outputs.mode == 'build'
+        env:
+          REPO_ROOT: ${{ github.workspace }}
+        run: bash scripts/build-pty-android-ci.sh
+
+      - name: Vendor the built PTY natives (commit back to repo)
+        # First build for new pty/bun-pty versions lands here; every later run
+        # reuses vendor/ and skips the source build.
+        # No push trigger on this workflow, so this cannot self-trigger.
+        if: steps.pty.outputs.mode == 'build'
+        run: |
+          PTY_BIN="vendor/opencode-pty-${PTY_VERSION}-android-aarch64"
+          RUSTPTY_SO="vendor/librust_pty-${BUN_PTY_VERSION}-android-aarch64.so"
+          cp -v out/opencode-pty "$PTY_BIN"
+          cp -v out/librust_pty_arm64.so "$RUSTPTY_SO"
+          (cd vendor && sha256sum "$(basename "$PTY_BIN")" > "$(basename "$PTY_BIN").sha256")
+          (cd vendor && sha256sum "$(basename "$RUSTPTY_SO")" > "$(basename "$RUSTPTY_SO").sha256")
+          git config user.name "opencode-android-bot"
+          git config user.email "opencode-android-bot@users.noreply.github.com"
+          git add "$PTY_BIN" "$PTY_BIN.sha256" "$RUSTPTY_SO" "$RUSTPTY_SO.sha256"
+          git commit -m "vendor pty ${PTY_VERSION} + rust_pty ${BUN_PTY_VERSION} android-aarch64 (CI-built)" || echo "nothing to commit"
+          git push
+
       - name: Fetch embed deps (all-platform native packages)
         # build.ts embeds @opentui/core-linux-arm64-musl and
         # @parcel/watcher-android-arm64 at compile time, but only an
@@ -204,6 +259,9 @@ jobs:
           ls -d node_modules/.bun/@opentui+core-linux-arm64-musl@*/node_modules/@opentui/core-linux-arm64-musl
           ls -d node_modules/.bun/@parcel+watcher-android-arm64@*/node_modules/@parcel/watcher-android-arm64 || \
             ls -d node_modules/@parcel/watcher-android-arm64
+          ls -d node_modules/.bun/@opencode-ai+pty-linux-arm64-musl@*/node_modules/@opencode-ai/pty-linux-arm64-musl
+          ls node_modules/.bun/bun-pty@*/node_modules/bun-pty/rust-pty/target/release/librust_pty_arm64.so 2>/dev/null || \
+            ls node_modules/bun-pty/rust-pty/target/release/librust_pty_arm64.so
 
       - name: Swap CI bionic lib into the npm musl slot (embed pure bionic)
         # Overwriting that file makes the binary self-contained: no musl
@@ -216,6 +274,23 @@ jobs:
             echo "musl-ism leaked into staged lib" >&2; exit 1
           fi
 
+      - name: Swap CI android PTY natives into embed slots
+        # Daemon binary: android build goes into the linux-arm64-musl npm slot,
+        # which resolveOpencodePty maps android->musl to (same trick as libopentui).
+        # Inline lib: android cdylib overwrites bun-pty's glibc librust_pty_arm64.so,
+        # which Bun's compile-time require picks for arm64 (no source change needed).
+        run: |
+          PTY_PKG=$(ls -d upstream/node_modules/.bun/@opencode-ai+pty-linux-arm64-musl@*/node_modules/@opencode-ai/pty-linux-arm64-musl)
+          cp -v out/opencode-pty "$PTY_PKG/bin/opencode-pty"
+          chmod 755 "$PTY_PKG/bin/opencode-pty"
+          RUSTPTY_DST=$(ls upstream/node_modules/.bun/bun-pty@*/node_modules/bun-pty/rust-pty/target/release/librust_pty_arm64.so 2>/dev/null || \
+            ls upstream/node_modules/bun-pty/rust-pty/target/release/librust_pty_arm64.so)
+          cp -v out/librust_pty_arm64.so "$RUSTPTY_DST"
+          readelf -d "$RUSTPTY_DST" | grep NEEDED
+          if readelf -d "$RUSTPTY_DST" | grep -q "libc.so.6"; then
+            echo "glibc-linked cdylib leaked into android build" >&2; exit 1
+          fi
+
       - name: Build CLI (android)
         # --skip-install: embed deps were fetched verbatim in the step above.
         run: |
@@ -226,12 +301,13 @@ jobs:
           ls -lh "$GITHUB_WORKSPACE/dist/cli/cli-linux-arm64-android/bin/opencode"
 
       - name: Free disk (node_modules, caches, archives)
-        # Both builds are done; node_modules + bun/zig caches are GBs we no
+        # Both builds are done; node_modules + bun/zig/cargo caches are GBs we no
         # longer need, and the 166M binary gets staged 3x during packaging.
         run: |
           df -h / /tmp
           rm -rf upstream/node_modules upstream/.git dist/cli/.bun \
-            /tmp/zig.tar.xz /tmp/ndk.zip ~/.bun/install/cache ~/.cache/zig
+            /tmp/zig.tar.xz /tmp/ndk.zip ~/.bun/install/cache ~/.cache/zig \
+            work/opencode-pty-*/target work/bun-pty-*/rust-pty/target ~/.cargo/registry/cache
           df -h / /tmp
 
       - name: Package (zip, deb, pacman)

@@ -37,14 +37,17 @@ Built every Monday 03:00 UTC from the latest stable upstream `v2.*` tag
 
 - CLI: `bun build --compile` with Bun's official `android` base binary,
   plus small patches (`patches/`) mapping the build onto Android
-  (watcher `android-arm64` binding, pty skip, musl `fff`/opentui selection,
-  loader android→linux-musl mapping, `getBackend` android→inotify).
+  (watcher `android-arm64` binding, pty `android→musl` slot mapping,
+  musl `fff`/opentui selection, loader android→linux-musl mapping,
+  `getBackend` android→inotify).
 - Renderer: `libopentui.so` cross-compiled for bionic with Zig 0.16 + NDK
   r28, **vendored per version** under `vendor/` and embedded into the CLI
   (source builds run only when a new opentui version has no vendored lib —
   see `vendor/README.md`).
-- File watcher enabled via official `@parcel/watcher-android-arm64`
-  (inotify); wrapper sets `LD_LIBRARY_PATH` for `libc++_shared.so`.
-  Only pty stays disabled (upstream ships no Android build).
+- PTY: `opencode-pty` daemon + `librust_pty` cdylib cross-compiled for
+  bionic with cargo + NDK r28 (**vendored per version**, swapped into the
+  musl/bun-pty slots pre-build). Daemon carries the `TMPDIR` socket patch
+  (`/tmp` is not writable on Android). Wrapper sets `LD_LIBRARY_PATH`
+  for `libc++_shared.so`. Node-pty SEA path stays unused (Bun binary only).
 
 Full story: [`docs/REPORT.md`](docs/REPORT.md).

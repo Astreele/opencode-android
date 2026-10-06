@@ -43,13 +43,22 @@ Upstream repo: `anomalyco/opencode`, tag `v2.0.24`
      (resolves to the `bun-linux-aarch64-android` base asset);
    - parcel-watcher binding: use official `@parcel/watcher-android-arm64`
      (not the `linux-arm64-android` name, which does not exist);
-   - `resolveOpencodePty`: return undefined for android (no prebuilt binding);
+   - `resolveOpencodePty`: android→`musl` slot (CI swaps the android-built
+     daemon into `@opencode-ai/pty-linux-arm64-musl`; the musl static binary
+     runs on Android, but a rebuild is still needed for the TMPDIR socket fix);
    - `FFF_LIBC` and compile-time `process.env.OPENTUI_LIBC`: android→`"musl"`.
      Never `"android"`: the runtime loader **throws** for anything but
      unset/`glibc`/`musl`, so the first build's TUI was dead on arrival
      (`--version` doesn't touch the loader — that's why it looked fine).
 2. `v2-android.patch` (guysoft's, applies cleanly to 0.5.14): bionic include
    handling, `pthread`/`m` link fixes, miniaudio/Yoga translate shims.
+3. `watcher-android.patch` (`packages/core/src/filesystem/watcher.ts`):
+   `getBackend()` had no `android` case; map `android→inotify`
+   (`@parcel/watcher-android-arm64` uses inotify).
+4. `opencode-pty-socket-tmpdir.patch` (applied to `anomalyco/opencode-pty`,
+   not the monorepo): `socket_root()` hardcoded `/tmp`, which is not writable
+   on Android (owned `shell`, mode `0711`). Respect absolute `$TMPDIR`
+   (Termux sets `$PREFIX/tmp`); socket path still fits `sun_path` (~89 chars).
 3. Loader mapping (`scripts/patch-opentui-loader.py`, anchor-based so chunk
    filename hashes don't matter): Bun's Android runtime reports
    `process.platform === "android"`, unknown to stock `@opentui/core`
@@ -110,12 +119,15 @@ Upstream repo: `anomalyco/opencode`, tag `v2.0.24`
 
 ```
 opencode2 (wrapper, sh)
-  env: LD_LIBRARY_PATH=$PREFIX/lib (for parcel watcher libc++_shared.so)
+  env: LD_LIBRARY_PATH=$PREFIX/lib (parcel watcher + rust_pty libc++_shared.so)
   └─ opencode2.bin (bionic, Bun android base)
        ├─ JS/TS app + @parcel/watcher-android-arm64 + android→musl loader mapping
-       └─ EMBEDDED renderer: CI-built true-bionic libopentui.so
-            (swapped into the npm musl slot pre-build, so the bundler
-             picks it up; NEEDED libm/libc/libdl, 425/425 symbols)
+       ├─ EMBEDDED renderer: CI-built true-bionic libopentui.so
+       │    (swapped into the npm musl slot pre-build; NEEDED libm/libc/libdl)
+       ├─ EMBEDDED pty daemon: CI-built bionic opencode-pty
+       │    (swapped into the pty-linux-arm64-musl npm slot; TMPDIR-patched)
+       └─ EMBEDDED inline pty: CI-built bionic librust_pty_arm64.so
+            (overwrites bun-pty's glibc .so pre-build; dlopen via bun:ffi)
 ```
 
 No sidecar `.so`, no `LD_PRELOAD`, no `OTUI_ASSET_ROOT`, no patchelf in the
@@ -135,13 +147,34 @@ parcel; only recursive `directory` watches needed this fix. The old
 `OPENCODE_FILEWATCHER_DISABLE`/`OPENCODE_DISABLE_FILEWATCHER`) and is now
 unset.
 
+PTY notes: neither `@opencode-ai/pty` (0.2.0) nor `bun-pty` (0.4.9) ships
+Android prebuilds (npm registry + `greadelf`: node-pty needs `libc.so.6`,
+`librust_pty_arm64.so` needs `libc.so.6`). Actual errors, all fixed in-repo:
+- Daemon dies at startup: `socket_root()` hardcodes `/tmp` (unwritable on
+  Android) → `Permission denied (os error 13)`. The musl-static binary
+  itself runs (`--help`/`--version` OK).
+  Fix: `patches/opencode-pty-socket-tmpdir.patch` respects absolute `$TMPDIR`.
+  Verified by executing the patched function: `TMPDIR` set → writable path
+  fitting `sun_path`; unset → the same `EACCES`.
+- `build.rs` has no `aarch64-linux-android` zig-target mapping (panics on
+  `unsupported Ghostty target`), required for the Android cross-compile.
+  Fix: `patches/opencode-pty-buildrs-android.patch`.
+- `rust-pty` depends on `portable-pty 0.8`, whose `termios` dep has no Android
+  target (hard compile failure). 0.9 (via `serial2`) builds unchanged.
+  Fix: `patches/bun-pty-portable09.patch`. Verified: rebuilt `.so` is pure
+  bionic and spawns shells with working IO under the Bun android runtime.
+Both natives are cargo+NDK cross-compiled in CI and vendored under `vendor/`
+like libopentui. Node-pty SEA path stays unused (Bun binary only).
+
 ## 7. Maintenance
 
 `.github/workflows/build-weekly.yml` runs Mondays 03:00 UTC (plus manual):
 resolve latest `v2.*` → skip if release exists → pin host Bun from upstream
-`packageManager` → verify Bun android base exists → clone/patch/install →
-patch loader → build CLI → build lib (Zig 0.16 + NDK r28) → verify bionic
-(no `__errno_location`) → package zip/deb/pacman + SHA256SUMS → release.
+`packageManager` + pty/bun-pty versions from `packages/core/package.json` →
+verify Bun android base exists → clone/patch/install → patch loader →
+build lib (Zig 0.16 + NDK r28) + build pty (cargo + NDK r28) → verify bionic
+(no `__errno_location`, no `libc.so.6`) → package zip/deb/pacman + SHA256SUMS
+→ release.
 Known future breakage: opentui chunk rewrites (loader patch asserts anchors),
 `v2-android.patch` drift (fails loudly), Bun dropping the android base asset
 (pre-checked with a clear error).
