@@ -266,11 +266,12 @@ jobs:
           df -h / /tmp
 
       - name: Fetch embed deps (all-platform native packages)
-        # build.ts embeds @opentui/core-linux-arm64-musl and
-        # @parcel/watcher-android-arm64 at compile time, but only an
-        # --os="*"/--cpu="*" install materializes those dirs. Do it here
-        # (also runs postinstall scripts like fix-node-pty) so the next step
-        # can overwrite the file BEFORE the bundler reads it; the CLI build
+        # build.ts embeds @opentui/core-linux-arm64-musl at compile time, but
+        # only an --os="*"/--cpu="*" install materializes that dir. The android
+        # watcher .node is located by absolute path (Bun won't resolve the
+        # os:android package name on a linux host). Do it here (also runs
+        # postinstall scripts like fix-node-pty) so the next step can
+        # overwrite the file BEFORE the bundler reads it; the CLI build
         # then uses --skip-install and stays deterministic.
         run: |
           export PATH="$HOME/.bun/bin:$PATH"
@@ -289,12 +290,6 @@ jobs:
           fi
           ls -d node_modules/.bun/@parcel+watcher-android-arm64@*/node_modules/@parcel/watcher-android-arm64 2>/dev/null || \
             ls -d node_modules/@parcel/watcher-android-arm64
-          # Bun's bundler refuses to resolve packages declaring os:android on
-          # a linux host (the linux-arm64-musl equivalent resolves fine).
-          # Strip os/cpu metadata; the .node blob embeds the same either way.
-          WATCHER_PKG=$(ls -d node_modules/.bun/@parcel+watcher-android-arm64@*/node_modules/@parcel/watcher-android-arm64 2>/dev/null || \
-            ls -d node_modules/@parcel/watcher-android-arm64)
-          python3 -c "import json; p='$WATCHER_PKG/package.json'; d=json.load(open(p)); d.pop('os',None); d.pop('cpu',None); json.dump(d,open(p,'w'),indent=2); print('stripped platform metadata from', p)"
           if ! ls -d node_modules/.bun/@opencode-ai+pty-linux-arm64-musl@*/node_modules/@opencode-ai/pty-linux-arm64-musl 2>/dev/null; then
             echo "bun skipped pty musl package; fetching @opencode-ai/pty-linux-arm64-musl@$PTY_VERSION"
             mkdir -p node_modules/@opencode-ai/pty-linux-arm64-musl
