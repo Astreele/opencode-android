@@ -107,7 +107,7 @@ jobs:
 
       - name: Clone upstream + apply CLI patch
         run: |
-          git clone --depth 1 --branch "${UPSTREAM_TAG}" https://github.com/${REPO_UPSTREAM}/opencode.git upstream
+          git clone --depth 1 --branch "${UPSTREAM_TAG}" https://github.com/${REPO_UPSTREAM}.git upstream
           cd upstream
           git apply --check ../patches/cli-build-android.patch
           git apply ../patches/cli-build-android.patch
