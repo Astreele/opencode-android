@@ -33,6 +33,8 @@ export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN/aarch64-linux-andro
 export CC_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android${ANDROID_API}-clang"
 export AR_aarch64_linux_android="$TOOLCHAIN/llvm-ar"
 export CFLAGS_aarch64_linux_android="--sysroot=$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+# ghostty's android-ndk/build.zig locates the NDK via ANDROID_NDK_HOME.
+export ANDROID_NDK_HOME="$NDK_DIR"
 
 echo "==> opencode-pty v${PTY_VERSION} (daemon binary)"
 if [ ! -d "$WORK/opencode-pty-${PTY_VERSION}/.git" ]; then

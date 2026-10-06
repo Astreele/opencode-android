@@ -135,7 +135,7 @@ jobs:
           fi
 
       - name: Install Zig
-        if: steps.lib.outputs.mode == 'build'
+        if: steps.lib.outputs.mode == 'build' || steps.pty.outputs.mode == 'build'
         run: |
           cd /tmp
           wget -q "https://ziglang.org/download/${ZIG_VERSION}/zig-x86_64-linux-${ZIG_VERSION}.tar.xz" -O zig.tar.xz
