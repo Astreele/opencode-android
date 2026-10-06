@@ -1,5 +1,5 @@
 diff --git a/packages/cli/script/build.ts b/packages/cli/script/build.ts
-index f55d890..3df1ad0 100755
+index f55d890..268f2c9 100755
 --- a/packages/cli/script/build.ts
 +++ b/packages/cli/script/build.ts
 @@ -33,7 +33,7 @@ const releaseAssets = new Map<string, Promise<Map<string, string>>>()
@@ -19,20 +19,20 @@ index f55d890..3df1ad0 100755
    { os: "darwin", arch: "arm64" },
    { os: "darwin", arch: "x64" },
    { os: "darwin", arch: "x64", avx2: false },
-@@ -112,7 +113,12 @@ export default { path: file, version: ${JSON.stringify(opencodePty.version)}, sh
+@@ -107,7 +108,12 @@ export default { path: file, version: ${JSON.stringify(opencodePty.version)}, sh
+       )
+     },
+   }
+-  const parcelWatcherPackage = `@parcel/watcher-${item.os}-${item.arch}${item.os === "linux" ? `-${item.abi ?? "glibc"}` : ""}`
++  // Upstream has no @parcel/watcher-linux-arm64-android; the real Android
++  // prebuild is @parcel/watcher-android-arm64 (os=android, no libc suffix).
++  const parcelWatcherPackage =
++    item.abi === "android"
++      ? "@parcel/watcher-android-arm64"
++      : `@parcel/watcher-${item.os}-${item.arch}${item.os === "linux" ? `-${item.abi ?? "glibc"}` : ""}`
+   const parcelWatcherPlugin: BunPlugin = {
      name: "parcel-watcher-binding",
      setup(build) {
-       build.onLoad({ filter: /filesystem[/\\]watcher-binding\.ts$/ }, () => ({
--        contents: `export default () => require(${JSON.stringify(parcelWatcherPackage)})`,
-+        // Android has no @parcel/watcher native binding; the wrapper forces
-+        // OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER=true so this stub is never called.
-+        contents:
-+          item.abi === "android"
-+            ? `export default () => { throw new Error("file watcher disabled on Android") }`
-+            : `export default () => require(${JSON.stringify(parcelWatcherPackage)})`,
-         loader: "js",
-       }))
-     },
 @@ -155,8 +161,12 @@ export default { path: file, version: ${JSON.stringify(opencodePty.version)}, sh
        OPENCODE_ARTIFACT: `'cli'`,
        OPENCODE_LIBC: item.os === "linux" ? `'${item.abi ?? "glibc"}'` : "undefined",

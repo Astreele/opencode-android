@@ -27,8 +27,8 @@ if [ -n "${VERSION:-}" ]; then TAG="$VERSION"; else
 fi
 echo "TAG=$TAG"
 
-step "installing ripgrep dependency"
-pkg install -y ripgrep
+step "installing dependencies (ripgrep, libc++ for parcel watcher)"
+pkg install -y ripgrep libc++
 
 step "downloading release"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT

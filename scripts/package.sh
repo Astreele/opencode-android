@@ -30,8 +30,11 @@ set -eu
 SELF="$(readlink -f "$0" 2>/dev/null || echo "$0")"
 DIR="$(CDPATH= cd -- "$(dirname "$SELF")" && pwd)"
 export PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
-# @parcel/watcher ships no Android binding; the build embeds a stub instead.
-export OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER="${OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER:-true}"
+# watcher.node (parcel android-arm64) needs Termux libc++_shared.so; the
+# official Bun android base has no RUNPATH to $PREFIX/lib.
+export LD_LIBRARY_PATH="${PREFIX}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+# Stale var from pre-watcher builds (v2 ignored it anyway); never force-disable.
+unset OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER || true
 for candidate in \
     "$DIR/../libexec/opencode2/opencode2.bin" \
     "$PREFIX/libexec/opencode2/opencode2.bin" \
@@ -77,7 +80,7 @@ Version: ${VER}
 Architecture: aarch64
 Maintainer: opencode-android <noreply@example.com>
 Installed-Size: ${INSTALLED_SIZE}
-Depends: ripgrep
+Depends: ripgrep, libc++
 Section: utils
 Priority: optional
 Homepage: https://github.com/anomalyco/opencode
@@ -99,6 +102,7 @@ packager = opencode-android
 arch = aarch64
 license = MIT
 depend = ripgrep
+depend = libc++
 PEOF
 (cd "$PKGROOT" && tar cf - .PKGINFO data | xz -9 > "$PACMAN")
 ls -lh "$PACMAN"

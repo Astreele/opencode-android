@@ -41,8 +41,8 @@ Upstream repo: `anomalyco/opencode`, tag `v2.0.24`
    `packages/cli/script/opencode-pty.ts`):
    - allow `abi "android"`, add `{linux, arm64, android}` target
      (resolves to the `bun-linux-aarch64-android` base asset);
-   - parcel-watcher binding: emit a throwing stub for android (npm has no
-     `@parcel/watcher-linux-arm64-android`; wrapper disables the watcher);
+   - parcel-watcher binding: use official `@parcel/watcher-android-arm64`
+     (not the `linux-arm64-android` name, which does not exist);
    - `resolveOpencodePty`: return undefined for android (no prebuilt binding);
    - `FFF_LIBC` and compile-time `process.env.OPENTUI_LIBC`: android→`"musl"`.
      Never `"android"`: the runtime loader **throws** for anything but
@@ -110,9 +110,9 @@ Upstream repo: `anomalyco/opencode`, tag `v2.0.24`
 
 ```
 opencode2 (wrapper, sh)
-  env: OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER only
+  env: LD_LIBRARY_PATH=$PREFIX/lib (for parcel watcher libc++_shared.so)
   └─ opencode2.bin (bionic, Bun android base)
-       ├─ JS/TS app + watcher stub + android→musl loader mapping
+       ├─ JS/TS app + @parcel/watcher-android-arm64 + android→musl loader mapping
        └─ EMBEDDED renderer: CI-built true-bionic libopentui.so
             (swapped into the npm musl slot pre-build, so the bundler
              picks it up; NEEDED libm/libc/libdl, 425/425 symbols)
@@ -122,6 +122,18 @@ No sidecar `.so`, no `LD_PRELOAD`, no `OTUI_ASSET_ROOT`, no patchelf in the
 shipped packages: `opencode2` + `opencode2.bin` only. (An earlier revision
 used an `OTUI_ASSET_ROOT` override with a musl lib + 4-symbol shim; retired
 once the CI bionic lib proved out — see failure log §5.7–5.9.)
+
+Watcher notes (`patches/watcher-android.patch`): upstream
+`getBackend()` had no `android` case, so directory watches returned empty
+even with the binding present. Map `android→inotify`. Verified on-device:
+Node + Bun-android both `subscribe`/`unsubscribe` with `inotify` backend;
+Bun needs `LD_LIBRARY_PATH` (official base has no RUNPATH to `$PREFIX/lib`,
+unlike Termux-built node). `Depends: libc++` provides `libc++_shared.so`.
+File/dir `file`+`entries` watches already used `node:fs` and never needed
+parcel; only recursive `directory` watches needed this fix. The old
+`OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER` wrapper var was stale (v2 reads
+`OPENCODE_FILEWATCHER_DISABLE`/`OPENCODE_DISABLE_FILEWATCHER`) and is now
+unset.
 
 ## 7. Maintenance
 

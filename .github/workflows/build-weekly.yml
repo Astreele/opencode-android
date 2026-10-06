@@ -144,12 +144,14 @@ jobs:
             grep -q "bun-linux-aarch64-android.zip" || \
             { echo "bun v${BUN_VERSION} has no android base binary" >&2; exit 1; }
 
-      - name: Clone upstream + apply CLI patch
+      - name: Clone upstream + apply patches
         run: |
           git clone --depth 1 --branch "${UPSTREAM_TAG}" https://github.com/${REPO_UPSTREAM}.git upstream
           cd upstream
           git apply --check ../patches/cli-build-android.patch
           git apply ../patches/cli-build-android.patch
+          git apply --check ../patches/watcher-android.patch
+          git apply ../patches/watcher-android.patch
 
       - name: Install JS deps
         run: |
@@ -189,8 +191,9 @@ jobs:
           git push
 
       - name: Fetch embed deps (all-platform native packages)
-        # build.ts embeds @opentui/core-linux-arm64-musl at compile time, but
-        # only an --os="*"/--cpu="*" install materializes that dir. Do it here
+        # build.ts embeds @opentui/core-linux-arm64-musl and
+        # @parcel/watcher-android-arm64 at compile time, but only an
+        # --os="*"/--cpu="*" install materializes those dirs. Do it here
         # (also runs postinstall scripts like fix-node-pty) so the next step
         # can overwrite the file BEFORE the bundler reads it; the CLI build
         # then uses --skip-install and stays deterministic.
@@ -199,6 +202,8 @@ jobs:
           cd upstream
           bun install --os="*" --cpu="*"
           ls -d node_modules/.bun/@opentui+core-linux-arm64-musl@*/node_modules/@opentui/core-linux-arm64-musl
+          ls -d node_modules/.bun/@parcel+watcher-android-arm64@*/node_modules/@parcel/watcher-android-arm64 || \
+            ls -d node_modules/@parcel/watcher-android-arm64
 
       - name: Swap CI bionic lib into the npm musl slot (embed pure bionic)
         # Overwriting that file makes the binary self-contained: no musl
