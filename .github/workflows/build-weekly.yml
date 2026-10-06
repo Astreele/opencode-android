@@ -277,9 +277,26 @@ jobs:
           cd upstream
           bun install --os="*" --cpu="*"
           ls -d node_modules/.bun/@opentui+core-linux-arm64-musl@*/node_modules/@opentui/core-linux-arm64-musl
-          ls -d node_modules/.bun/@parcel+watcher-android-arm64@*/node_modules/@parcel/watcher-android-arm64 || \
+          # Bun may skip os:android optionals even with --os="*"; fetch the
+          # exact tarball from the registry so the bundler can resolve it.
+          if ! ls -d node_modules/.bun/@parcel+watcher-android-arm64@*/node_modules/@parcel/watcher-android-arm64 2>/dev/null && \
+             ! ls -d node_modules/@parcel/watcher-android-arm64 2>/dev/null; then
+            WVER=$(python3 -c "import json; print(json.load(open('packages/core/package.json'))['dependencies']['@parcel/watcher'])")
+            echo "bun skipped android watcher; fetching @parcel/watcher-android-arm64@$WVER"
+            mkdir -p node_modules/@parcel/watcher-android-arm64
+            curl -fsSL "https://registry.npmjs.org/@parcel/watcher-android-arm64/-/watcher-android-arm64-${WVER}.tgz" | \
+              tar xz -C node_modules/@parcel/watcher-android-arm64 --strip-components=1
+          fi
+          ls -d node_modules/.bun/@parcel+watcher-android-arm64@*/node_modules/@parcel/watcher-android-arm64 2>/dev/null || \
             ls -d node_modules/@parcel/watcher-android-arm64
-          ls -d node_modules/.bun/@opencode-ai+pty-linux-arm64-musl@*/node_modules/@opencode-ai/pty-linux-arm64-musl
+          if ! ls -d node_modules/.bun/@opencode-ai+pty-linux-arm64-musl@*/node_modules/@opencode-ai/pty-linux-arm64-musl 2>/dev/null; then
+            echo "bun skipped pty musl package; fetching @opencode-ai/pty-linux-arm64-musl@$PTY_VERSION"
+            mkdir -p node_modules/@opencode-ai/pty-linux-arm64-musl
+            curl -fsSL "https://registry.npmjs.org/@opencode-ai/pty-linux-arm64-musl/-/pty-linux-arm64-musl-${PTY_VERSION}.tgz" | \
+              tar xz -C node_modules/@opencode-ai/pty-linux-arm64-musl --strip-components=1
+          fi
+          ls -d node_modules/.bun/@opencode-ai+pty-linux-arm64-musl@*/node_modules/@opencode-ai/pty-linux-arm64-musl 2>/dev/null || \
+            ls -d node_modules/@opencode-ai/pty-linux-arm64-musl
           ls node_modules/.bun/bun-pty@*/node_modules/bun-pty/rust-pty/target/release/librust_pty_arm64.so 2>/dev/null || \
             ls node_modules/bun-pty/rust-pty/target/release/librust_pty_arm64.so
 
@@ -300,7 +317,8 @@ jobs:
         # Inline lib: android cdylib overwrites bun-pty's glibc librust_pty_arm64.so,
         # which Bun's compile-time require picks for arm64 (no source change needed).
         run: |
-          PTY_PKG=$(ls -d upstream/node_modules/.bun/@opencode-ai+pty-linux-arm64-musl@*/node_modules/@opencode-ai/pty-linux-arm64-musl)
+          PTY_PKG=$(ls -d upstream/node_modules/.bun/@opencode-ai+pty-linux-arm64-musl@*/node_modules/@opencode-ai/pty-linux-arm64-musl 2>/dev/null || \
+            ls -d upstream/node_modules/@opencode-ai/pty-linux-arm64-musl)
           cp -v out/opencode-pty "$PTY_PKG/bin/opencode-pty"
           chmod 755 "$PTY_PKG/bin/opencode-pty"
           RUSTPTY_DST=$(ls upstream/node_modules/.bun/bun-pty@*/node_modules/bun-pty/rust-pty/target/release/librust_pty_arm64.so 2>/dev/null || \
