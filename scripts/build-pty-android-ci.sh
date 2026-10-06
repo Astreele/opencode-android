@@ -21,8 +21,10 @@ TARGET="aarch64-linux-android"
 mkdir -p "$WORK" "$OUT"
 
 command -v cargo >/dev/null || { echo "cargo missing" >&2; exit 1; }
-rustup target list --installed 2>/dev/null | grep -q "$TARGET" || \
-  { echo "rust target $TARGET missing: rustup target add $TARGET" >&2; exit 1; }
+# NOTE: do not gate on `rustup target list` here: source checkouts may pin
+# their own toolchain via rust-toolchain.toml (opencode-pty pins 1.90.0),
+# which shadows the default toolchain the target was installed for.
+# Each build dir installs the target itself (idempotent).
 
 TOOLCHAIN="$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin"
 test -x "$TOOLCHAIN/aarch64-linux-android${ANDROID_API}-clang" || \
@@ -43,6 +45,7 @@ done
 # idempotent: already-applied is fine, broken-patch is fatal (checked above)
 (
   cd "$WORK/opencode-pty-${PTY_VERSION}"
+  rustup target add "$TARGET"
   cargo build --release --target "$TARGET"
 )
 BIN="$WORK/opencode-pty-${PTY_VERSION}/target/$TARGET/release/opencode-pty"
@@ -60,6 +63,7 @@ git -C "$WORK/bun-pty-${BUN_PTY_VERSION}" apply --check "$REPO_ROOT/patches/bun-
 git -C "$WORK/bun-pty-${BUN_PTY_VERSION}" apply "$REPO_ROOT/patches/bun-pty-portable09.patch" 2>/dev/null || true
 (
   cd "$WORK/bun-pty-${BUN_PTY_VERSION}/rust-pty"
+  rustup target add "$TARGET"
   cargo build --release --target "$TARGET"
 )
 CDYLIB="$WORK/bun-pty-${BUN_PTY_VERSION}/rust-pty/target/$TARGET/release/librust_pty.so"
