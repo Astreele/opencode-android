@@ -81,7 +81,7 @@ jobs:
           VENDOR="vendor/libopentui-${OPENTUI_VERSION}-android-aarch64.so"
           mkdir -p out
           if [ -f "$VENDOR" ]; then
-            sha256sum -c "vendor/libopentui-${OPENTUI_VERSION}-android-aarch64.so.sha256"
+            (cd vendor && sha256sum -c "libopentui-${OPENTUI_VERSION}-android-aarch64.so.sha256")
             cp -v "$VENDOR" out/libopentui.so
             echo "mode=vendored" >> "$GITHUB_OUTPUT"
           else
