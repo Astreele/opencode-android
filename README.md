@@ -40,7 +40,9 @@ Built every Monday 03:00 UTC from the latest stable upstream `v2.*` tag
   (watcher stub, pty skip, musl `fff`/opentui selection, loader
   android→linux-musl mapping).
 - Renderer: `libopentui.so` cross-compiled for bionic with Zig 0.16 + NDK
-  r28, selected at runtime via `OTUI_ASSET_ROOT`.
+  r28, **vendored per version** under `vendor/` and embedded into the CLI
+  (source builds run only when a new opentui version has no vendored lib —
+  see `vendor/README.md`).
 - File watcher and pty bindings stay disabled (upstream ships no Android
   builds of those; same tradeoff as other Termux ports).
 

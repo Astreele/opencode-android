@@ -71,9 +71,26 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install host deps
-        run: sudo apt-get update && sudo apt-get install -y wget unzip xz-utils dpkg-dev patchelf
+        run: sudo apt-get update && sudo apt-get install -y wget unzip xz-utils dpkg-dev
+
+      - name: Select renderer lib (vendored, or build)
+        id: lib
+        env:
+          REPO_ROOT: ${{ github.workspace }}
+        run: |
+          VENDOR="vendor/libopentui-${OPENTUI_VERSION}-android-aarch64.so"
+          mkdir -p out
+          if [ -f "$VENDOR" ]; then
+            sha256sum -c "vendor/libopentui-${OPENTUI_VERSION}-android-aarch64.so.sha256"
+            cp -v "$VENDOR" out/libopentui.so
+            echo "mode=vendored" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=build" >> "$GITHUB_OUTPUT"
+            echo "no vendored lib for opentui ${OPENTUI_VERSION}, will build from source"
+          fi
 
       - name: Install Zig
+        if: steps.lib.outputs.mode == 'build'
         run: |
           cd /tmp
           wget -q "https://ziglang.org/download/${ZIG_VERSION}/zig-x86_64-linux-${ZIG_VERSION}.tar.xz" -O zig.tar.xz
@@ -83,6 +100,7 @@ jobs:
           zig version
 
       - name: Install Android NDK
+        if: steps.lib.outputs.mode == 'build'
         run: |
           if [ ! -d "$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64" ]; then
             cd /tmp
@@ -128,15 +146,27 @@ jobs:
           export PATH="$HOME/.bun/bin:$PATH"
           python3 scripts/patch-opentui-loader.py upstream
 
-      - name: Build libopentui.so (android)
+      - name: Build libopentui.so (android, fallback when not vendored)
+        if: steps.lib.outputs.mode == 'build'
         env:
           REPO_ROOT: ${{ github.workspace }}
         run: bash scripts/build-libopentui-ci.sh
 
+      - name: Fetch embed deps (all-platform native packages)
+        # build.ts embeds @opentui/core-linux-arm64-musl at compile time, but
+        # only an --os="*"/--cpu="*" install materializes that dir. Do it here
+        # (also runs postinstall scripts like fix-node-pty) so the next step
+        # can overwrite the file BEFORE the bundler reads it; the CLI build
+        # then uses --skip-install and stays deterministic.
+        run: |
+          export PATH="$HOME/.bun/bin:$PATH"
+          cd upstream
+          bun install --os="*" --cpu="*"
+          ls -d node_modules/.bun/@opentui+core-linux-arm64-musl@*/node_modules/@opentui/core-linux-arm64-musl
+
       - name: Swap CI bionic lib into the npm musl slot (embed pure bionic)
-        # The CLI bundler statically embeds @opentui/core-linux-arm64-musl.
-        # Overwriting that file with our bionic build makes the binary
-        # self-contained: no musl bytes, no runtime override needed.
+        # Overwriting that file makes the binary self-contained: no musl
+        # bytes, no runtime override needed.
         run: |
           MUSL_PKG=$(ls -d upstream/node_modules/.bun/@opentui+core-linux-arm64-musl@*/node_modules/@opentui/core-linux-arm64-musl)
           cp -v out/libopentui.so "$MUSL_PKG/libopentui.so"
@@ -146,14 +176,12 @@ jobs:
           fi
 
       - name: Build CLI (android)
-        # NOTE: no --skip-install: this step's internal
-        # `bun install --os="*" --cpu="*"` fetches the platform opentui
-        # packages (e.g. core-linux-arm64-musl) that get embedded.
+        # --skip-install: embed deps were fetched verbatim in the step above.
         run: |
           export PATH="$HOME/.bun/bin:$PATH"
           export BUN_COMPILE_RELEASE OPENCODE_VERSION OPENCODE_CHANNEL
           cd upstream/packages/cli
-          bun run script/build.ts --target=opencode-linux-arm64-android --skip-web-ui --outdir="$GITHUB_WORKSPACE/dist/cli"
+          bun run script/build.ts --target=opencode-linux-arm64-android --skip-install --skip-web-ui --outdir="$GITHUB_WORKSPACE/dist/cli"
           ls -lh "$GITHUB_WORKSPACE/dist/cli/cli-linux-arm64-android/bin/opencode"
 
       - name: Free disk (node_modules, caches, archives)
