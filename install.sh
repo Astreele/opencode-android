@@ -3,11 +3,14 @@
 # do NOT run on CI runners.
 # Install opencode2 (pure Android/aarch64 OpenCode) in native Termux.
 # Usage: bash install.sh  (or bash <(curl -fsSL <raw-url>/install.sh))
-# Env: VERSION (e.g. v2.0.24-android) to pin, REPO (default below).
+# Env: VERSION (e.g. v2.0.24-android) to pin, REPO (default below),
+#   GITHUB_TOKEN (or GH_TOKEN) for private repos. No python/jq needed:
+#   JSON is parsed with grep/cut/awk (base Termux tools).
 set -euo pipefail
 
 REPO="${REPO:-OWNER/opencode-android}"
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
 
 STEP=0
 step() { STEP=$((STEP+1)); echo "[$STEP $(date +%H:%M:%S)] ==> $*"; }
@@ -18,13 +21,19 @@ fail() { echo "[$STEP $(date +%H:%M:%S)] FAILED: $*" >&2; exit 1; }
 [ -d "$PREFIX" ] || fail "not Termux native (no $PREFIX); don't run inside proot"
 command -v curl >/dev/null || fail "curl missing: pkg install curl"
 command -v unzip >/dev/null || fail "unzip missing: pkg install unzip"
+command -v awk >/dev/null || fail "awk missing: pkg install gawk"
+
+CURL_AUTH=()
+[ -n "$TOKEN" ] && CURL_AUTH=(-H "Authorization: Bearer $TOKEN")
+API="https://api.github.com/repos/${REPO}"
 
 step "resolving version (REPO=$REPO)"
 if [ -n "${VERSION:-}" ]; then TAG="$VERSION"; else
-  TAG=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | \
-    python3 -c "import json,sys; print(json.load(sys.stdin)['tag_name'])") || \
+  TAG=$(curl -fsSL "${CURL_AUTH[@]}" "$API/releases/latest" | \
+    grep -o '"tag_name": *"[^"]*"' | head -n 1 | cut -d'"' -f4) || \
     fail "could not resolve latest release"
 fi
+[ -n "${TAG:-}" ] || fail "could not resolve latest release"
 echo "TAG=$TAG"
 
 step "installing dependencies (ripgrep, libc++ for parcel watcher)"
@@ -33,10 +42,28 @@ pkg install -y ripgrep libc++
 step "downloading release"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 cd "$TMP"
-curl -fSL -O "https://github.com/${REPO}/releases/download/${TAG}/SHA256SUMS"
-ZIP=$(grep -o "opencode2-.*-android-aarch64.zip" SHA256SUMS | head -n 1)
-[ -n "$ZIP" ] || fail "no android zip in release $TAG"
-curl -fSL -O "https://github.com/${REPO}/releases/download/${TAG}/${ZIP}"
+if [ -n "$TOKEN" ]; then
+  # Private repo: browser download URLs refuse token auth, so resolve the
+  # files through the release API and download with octet-stream accept.
+  REL_JSON=$(curl -fsSL "${CURL_AUTH[@]}" "$API/releases/tags/$TAG") || \
+    fail "could not read release $TAG (check token repo access)"
+  ZIP=$(echo "$REL_JSON" | grep -o '"name": *"opencode2-.*-android-aarch64\.zip"' | head -n 1 | cut -d'"' -f4)
+  [ -n "${ZIP:-}" ] || fail "no android zip in release $TAG"
+  asset_url() {
+    echo "$REL_JSON" | awk -v name="$1" '
+      /"url": *"[^"]*\/assets\/[0-9]+"/ { if (match($0, /https:[^"]*/)) url = substr($0, RSTART, RLENGTH) }
+      $0 ~ "\"name\": *\"" name "\"" { if (url != "") print url }'
+  }
+  for f in SHA256SUMS "$ZIP"; do
+    curl -fsSL "${CURL_AUTH[@]}" -H "Accept: application/octet-stream" \
+      "$(asset_url "$f")" -o "$f" || fail "download failed: $f"
+  done
+else
+  curl -fSL -O "https://github.com/${REPO}/releases/download/${TAG}/SHA256SUMS"
+  ZIP=$(grep -o "opencode2-.*-android-aarch64.zip" SHA256SUMS | head -n 1)
+  [ -n "${ZIP:-}" ] || fail "no android zip in release $TAG"
+  curl -fSL -O "https://github.com/${REPO}/releases/download/${TAG}/${ZIP}"
+fi
 sha256sum -c <(grep "$ZIP" SHA256SUMS) || fail "checksum mismatch"
 ok "$ZIP verified"
 

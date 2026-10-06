@@ -18,7 +18,9 @@ bash <(curl -fsSL https://raw.githubusercontent.com/OWNER/opencode-android/main/
 ```
 
 First set `OWNER` to your repo path in `install.sh` (the `REPO` default),
-or run with `REPO=you/opencode-android`.
+or run with `REPO=you/opencode-android`. For a private repo, export a token:
+`GITHUB_TOKEN=ghp_... bash install.sh` (or `GH_TOKEN`). Needs only base
+Termux tools (`curl`, `unzip`, `awk`) — no python/jq.
 
 Then:
 
