@@ -18,7 +18,7 @@ import glob
 import os
 import sys
 
-root = sys.argv[1]
+root = os.path.abspath(sys.argv[1])
 
 cands = []
 for pattern in (
