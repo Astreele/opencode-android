@@ -70,7 +70,7 @@ index f55d890..e89d3ed 100755
  }
 +
 +function resolveParcelWatcherAndroid() {
-+  const root = path.resolve(import.meta.dirname, "../..")
++  const root = path.resolve(import.meta.dirname, "../../..")
 +  const store = new Bun.Glob(
 +    "@parcel+watcher-android-arm64@*/node_modules/@parcel/watcher-android-arm64/watcher.node",
 +  )
