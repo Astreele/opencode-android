@@ -1,32 +1,38 @@
 # opencode-android
 
+[![latest release](https://img.shields.io/github/v/release/astreele/opencode-android)](https://github.com/astreele/opencode-android/releases)
+[![weekly build](https://github.com/astreele/opencode-android/actions/workflows/build-weekly.yml/badge.svg)](https://github.com/astreele/opencode-android/actions/workflows/build-weekly.yml)
+
 Pure Android/aarch64 builds of upstream OpenCode, for native Termux.
 Installs as `opencode2`; the installer also links `opencode` → `opencode2`,
 so v2 becomes the default `opencode` (v1 is replaced, not kept alongside).
 
-## Which script runs where
+- True bionic build — no proot, no glibc runners, no patchelf shims.
+- Everything embedded: `opencode2` + `opencode2.bin`, nothing else to install.
+- TUI, recursive file watching, and PTY/shell execution verified on-device.
 
-- **CI runner** (Linux x86_64, weekly workflow): everything under
-  `.github/` and `scripts/` — each file says `RUNS ON` in its header.
-  Termux paths there are install *targets*, never the build host.
-- **Device** (native Termux, never proot): `install.sh` only.
-
-## Install (native Termux, NOT inside proot)
+## Installation
 
 ```sh
-bash <(curl -fsSL https://raw.githubusercontent.com/OWNER/opencode-android/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/astreele/opencode-android/master/install.sh)
 ```
-
-First set `OWNER` to your repo path in `install.sh` (the `REPO` default),
-or run with `REPO=you/opencode-android`. For a private repo, export a token:
-`GITHUB_TOKEN=ghp_... bash install.sh` (or `GH_TOKEN`). Needs only base
-Termux tools (`curl`, `unzip`, `awk`) — no python/jq.
 
 Then:
 
 ```sh
-opencode2 auth   # connect a provider
-opencode2        # TUI
+opencode auth   # connect a provider
+opencode        # TUI
+```
+
+Requires Termux on aarch64. The installer fetches the latest
+release, installs `opencode2` + `opencode2.bin` under `$PREFIX`, links
+`opencode` → `opencode2`, and verifies with `opencode2 --version`.
+
+To uninstall:
+
+```sh
+rm -f "$PREFIX/bin/opencode" "$PREFIX/bin/opencode2"
+rm -rf "$PREFIX/libexec/opencode2"
 ```
 
 ## Releases
@@ -48,10 +54,6 @@ Built every Monday 03:00 UTC from the latest stable upstream `v2.*` tag
   (source builds run only when a new opentui version has no vendored lib —
   see `vendor/README.md`). No android asset exists upstream, so the musl
   slot + loader mapping is the only embedding path (by design).
-- Renderer: `libopentui.so` cross-compiled for bionic with Zig 0.16 + NDK
-  r28, **vendored per version** under `vendor/` and embedded into the CLI
-  (source builds run only when a new opentui version has no vendored lib —
-  see `vendor/README.md`).
 - PTY: `opencode-pty` daemon + `librust_pty` cdylib cross-compiled for
   bionic with cargo + NDK r28 (**vendored per version**, swapped into the
   musl/bun-pty slots pre-build). Daemon carries the `TMPDIR` socket patch
@@ -59,3 +61,36 @@ Built every Monday 03:00 UTC from the latest stable upstream `v2.*` tag
   for `libc++_shared.so`. Node-pty SEA path stays unused (Bun binary only).
 
 Full story: [`docs/REPORT.md`](docs/REPORT.md).
+
+## Credits
+
+This project builds on the work of many:
+
+- [**anomalyco/opencode**](https://github.com/anomalyco/opencode) —
+  upstream OpenCode v2, and its `bun build --compile` pipeline that made an
+  Android base binary possible in the first place.
+- [**guysoft/opencode-termux**](https://github.com/guysoft/opencode-termux) —
+  prior art for OpenCode on Termux: the `opencode2` wrapper layout this
+  installer reuses, the `v2-android.patch` used here (bionic includes,
+  pthread/miniaudio/Yoga shims), and the Zig dependency prep notes.
+- **dextune** and **Thr45hx** — earlier attempts (v1 with Bun + WebKit
+  cross-compiled from source) that mapped out what breaks on Termux.
+- [**Bun**](https://bun.sh) — the official `android` base binary that
+  removed the need for a source-built runtime.
+- [**anomalyco/opentui**](https://github.com/anomalyco/opentui) — the TUI
+  renderer; its sources cross-compile cleanly to a bionic `libopentui.so`.
+- [**anomalyco/opencode-pty**](https://github.com/anomalyco/opencode-pty)
+  and [**sursaone/bun-pty**](https://github.com/sursaone/bun-pty) — the PTY
+  daemon and `rust-pty` cdylib cross-compiled for Android.
+- [**@parcel/watcher**](https://github.com/parceljs/watcher) — directory
+  watching via its official `android-arm64` (inotify) binding.
+- **@ff-labs** — the official bionic `libfff_c.so`
+  (`@ff-labs/fff-bin-android-arm64`) behind the file finder.
+- [**Zig**](https://ziglang.org) and the [**Android NDK**](https://developer.android.com/ndk) —
+  cross-compiling the renderer and PTY natives for bionic.
+- **The Termux community** — the packages, ports, and hard-won knowledge
+  that make native builds like this possible.
+
+## License
+
+MIT — see [`LICENSE`](LICENSE).

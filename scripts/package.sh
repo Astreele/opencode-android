@@ -53,9 +53,12 @@ chmod 755 "$STAGE/opencode2.bin"
 # NOTE: packages carry no sidecar libs. The renderer is embedded in the
 # binary (bionic lib swapped into the npm musl slot pre-build).
 
+echo "==> license"
+cp -f "$REPO_ROOT/LICENSE" "$STAGE/"
+
 echo "==> zip"
 ZIP="$OUT/opencode2-${VER}-android-aarch64.zip"
-(cd "$STAGE" && zip -9 "$ZIP" opencode2 opencode2.bin >/dev/null)
+(cd "$STAGE" && zip -9 "$ZIP" opencode2 opencode2.bin LICENSE >/dev/null)
 ls -lh "$ZIP"
 
 echo "==> deb + pacman (Termux layouts)"
@@ -66,6 +69,9 @@ mkdir -p "$PKGROOT/data/data/com.termux/files/usr/libexec/opencode2"
 cp "$STAGE/opencode2" "$PKGROOT/data/data/com.termux/files/usr/bin/opencode2"
 cp "$STAGE/opencode2.bin" "$PKGROOT/data/data/com.termux/files/usr/libexec/opencode2/opencode2.bin"
 chmod 755 "$PKGROOT/data/data/com.termux/files/usr/bin/opencode2" "$PKGROOT/data/data/com.termux/files/usr/libexec/opencode2/opencode2.bin"
+# ship the license with the packages
+mkdir -p "$PKGROOT/data/data/com.termux/files/usr/share/doc/opencode2"
+cp -f "$STAGE/LICENSE" "$PKGROOT/data/data/com.termux/files/usr/share/doc/opencode2/"
 
 DEB="$OUT/opencode2_${VER}_aarch64.deb"
 DEBDIR="$WORK/deb"

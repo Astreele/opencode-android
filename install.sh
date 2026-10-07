@@ -100,6 +100,12 @@ chmod 755 "$PREFIX/libexec/opencode2/opencode2.bin"
 
 ln -sf "$PREFIX/bin/opencode2" "$PREFIX/bin/opencode"
 
+# Ship the license alongside the binary (present in release zips).
+if [ -f LICENSE ]; then
+    mkdir -p "$PREFIX/share/doc/opencode2"
+    cp -f LICENSE "$PREFIX/share/doc/opencode2/"
+fi
+
 echo "[10] Verifying..."
 
 "$PREFIX/bin/opencode2" --version

@@ -5,16 +5,7 @@ Target: latest stable upstream OpenCode v2 running **natively** in Termux
 `opencode` → `opencode2`, so v2 replaces v1 as the default).
 Result: `opencode v2.0.24-android-termux.1` with working TUI.
 
-## 1. Environment
-
-- Device: Galaxy S22 (SM-S901E), aarch64, 7.2 GB RAM + 8 GB swap, 60 GB free.
-- Termux (F-Droid) + Debian proot-distro. All build work ran **inside proot**
-  (fake uid 0 via `proot --change-id=0:0`, real kernel uid 10299); anything
-  needing real Android behavior ran in native Termux. `pkg`/`apt` refuse
-  fake-root, so Termux packages were installed with Termux's own
-  `dpkg -i` on manually downloaded `.deb`s (works: real uid owns `$PREFIX`).
-
-## 2. Why stock OpenCode cannot run on Termux
+## 1. Why stock OpenCode cannot run on Termux
 
 - Termux is bionic (Android libc), not glibc. Official `linux-arm64` binaries
   die with `SIGSYS`/missing glibc. Prior art (`guysoft/opencode-termux`,
@@ -26,14 +17,14 @@ Result: `opencode v2.0.24-android-termux.1` with working TUI.
   `executablePath` — so the CLI needs no source-built Bun/WebKit anymore.
   Only the renderer (`libopentui.so`, Zig-built) still needs compiling.
 
-## 3. Starting point (verified first)
+## 2. Starting point (verified first)
 
 Installed guysoft's prebuilt `opencode2 v1.0.2` (app `2.0.0-android-termux.1`,
 Android linker `/system/bin/linker64`, SHA256-verified) via filesystem copy +
 native `dpkg -i` for the `ripgrep` dependency. Proved the shape of a working
 install: `$PREFIX/bin/opencode2` wrapper + `$PREFIX/libexec/opencode2/`.
 
-## 4. Patches to upstream v2.0.24 (all in `patches/`)
+## 3. Patches to upstream v2.0.24 (all in `patches/`)
 
 Upstream repo: `anomalyco/opencode`, tag `v2.0.24`
 (`@opentui/core 0.5.14`, `packageManager bun@1.4.2`).
@@ -68,63 +59,14 @@ Upstream repo: `anomalyco/opencode`, tag `v2.0.24`
    fail `dlopen` on bionic (file finder silently dead). Points the android
    branch at the official `@ff-labs/fff-bin-android-arm64` (pure bionic,
    loads clean) by absolute path.
-3. Loader mapping (`scripts/patch-opentui-loader.py`, anchor-based so chunk
+6. Loader mapping (`scripts/patch-opentui-loader.py`, anchor-based so chunk
    filename hashes don't matter): Bun's Android runtime reports
    `process.platform === "android"`, unknown to stock `@opentui/core`
    (`Unsupported OpenTUI Node asset target: android-arm64`). Map android →
    `{linux, arm64, musl}` and widen the linux branch. Verified byte-identical
    output against a hand patch.
 
-## 5. Failure log (every dead end, with root cause)
-
-1. **`bun install` truncated under proot.** `Bun.build` failed resolving
-   `./export/AggregationTemporality` etc. Root cause: extracted packages
-   missing `.js` files (npm tarball has 198). Fix: overlay the two
-   `@opentelemetry/*` tarballs over the install. Lesson: verify, don't assume
-   package-manager success.
-2. **Zig 0.16 build-runner crash under proot** (`clone`/`linkat` `INVAL`
-   panic in `File.Atomic.link`). proot can't emulate `linkat(AT_EMPTY_PATH)`.
-   Moved the Zig step to native Termux.
-3. **`prepare-zig-deps.sh` 10-minute hang (native).** Its `ln`-hardlink lock
-   spins forever when `link()` fails; plus its `.ready` marker embeds the
-   tarball path, so a copied tree never hits the cache. Fix: skip when deps
-   exist, absolute-path marker, stale-lock cleanup, timeout.
-4. **translate-c shim headers missing.** Shims include `../miniaudio.h` /
-   `../yoga/yoga/Yoga.h`, resolved under the merged sysroot — staged
-   `src/vendor/miniaudio/miniaudio.h` + symlinked `zig-deps/yoga` there.
-5. **Unversioned triple rejected by Termux sysroot** (`Unversioned target
-   triples are not supported!` from newer bionic `cdefs.h`). Native builds
-   use `aarch64-linux-android.29`; CI with NDK r28 uses the unversioned triple
-   (accepted there) plus an `__ANDROID_MIN_SDK_VERSION__` belt in the shims.
-6. **Zig cache `AccessDenied`.** Root cause, proven by self-test: this
-   device's policy denies `link()` (`EACCES`) — the same denial caused failure
-   #3. Dead ends: `LD_PRELOAD` link→copy shim (works for `ln`, useless for Zig
-   — Zig's std makes **raw syscalls**, bypassing libc entirely), fresh
-   `--cache-dir` (same denial). Verdict: on-device Zig builds are impossible
-   here; the renderer must be cross-compiled off-device.
-7. **musl `.so` on bionic (stopgap that worked).** Methodology that mattered:
-   strip `@LIBC` version suffixes before `nm` comparison (else everything
-   looks missing). Truly missing: only `__errno_location`,
-   `pthread_tryjoin_np`, `shm_open`, `shm_unlink` → 6.7K `libmusl-shim.so`
-   (tryjoin as always-`EBUSY` mirrors upstream's own Android fallback in
-   `clipboard/host.zig`), plus `patchelf --add-needed libm.so` (musl folds
-   libm into libc; bionic doesn't). struct-layout risk checked by measurement
-   (mutex/cond/attr/stat = 40/48/56/128 on **both** sides).
-8. **`OPENTUI_LIB_PATH` red herring.** Nothing in v2 reads it (v1 leftover in
-   wrappers). The real override is `OTUI_ASSET_ROOT/<asset-key>`, checked
-   first by `resolveNativeLibraryPath` — enables lib A/B testing with zero
-   rebuilds.
-9. **guysoft 0.5.10 lib rejected.** Bun resolves all 425 dlopen symbols
-   eagerly; 0.5.10 lacks 2 (`embeddedTerminalSetTransparentBackground`,
-   `textBufferViewSetTextAlign`). No stubbing possible across dlopen handles.
-10. **CI teething (all fixed):** `GITHUB_PATH` is next-step-only (export
-    `PATH` in-step too); missing `actions/checkout` (workspace empty);
-    `check && apply` silently skips under `set -e` (split commands); yoga
-    link verified before extraction (moved after prep); **Zig has no bundled
-    Android libc** — pass `zig build --libc <ndk-based-libc.txt>`
-    (guysoft's script creates that file but never passes it).
-
-## 6. Final architecture (pure bionic, no shims)
+## 4. Final architecture (pure bionic, no shims)
 
 ```
 opencode2 (wrapper, sh)
@@ -142,7 +84,8 @@ opencode2 (wrapper, sh)
 No sidecar `.so`, no `LD_PRELOAD`, no `OTUI_ASSET_ROOT`, no patchelf in the
 shipped packages: `opencode2` + `opencode2.bin` only. (An earlier revision
 used an `OTUI_ASSET_ROOT` override with a musl lib + 4-symbol shim; retired
-once the CI bionic lib proved out — see failure log §5.7–5.9.)
+once the CI bionic lib proved out — see failure log entries 7–9 in
+`~/opencode-android-failure-logs.md`.)
 
 Watcher notes (`patches/watcher-android.patch`): upstream
 `getBackend()` had no `android` case, so directory watches returned empty
@@ -175,7 +118,7 @@ Android prebuilds (npm registry + `greadelf`: node-pty needs `libc.so.6`,
 Both natives are cargo+NDK cross-compiled in CI and vendored under `vendor/`
 like libopentui. Node-pty SEA path stays unused (Bun binary only).
 
-## 7. Maintenance
+## 5. Maintenance
 
 `.github/workflows/build-weekly.yml` runs Mondays 03:00 UTC (plus manual):
 resolve latest `v2.*` → skip if release exists → pin host Bun from upstream
