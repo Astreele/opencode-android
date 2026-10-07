@@ -6,6 +6,8 @@
 Pure Android/aarch64 builds of upstream OpenCode, for native Termux.
 Installs as `opencode2`; the installer also links `opencode` → `opencode2`,
 so v2 becomes the default `opencode` (v1 is replaced, not kept alongside).
+Prefer a single command? Install with `--cmd opencode` and the program runs
+from just `opencode` — no `opencode2` name, no symlink.
 
 - True bionic build — no proot, no glibc runners, no patchelf shims.
 - Everything embedded: `opencode2` + `opencode2.bin`, nothing else to install.
@@ -25,22 +27,94 @@ opencode        # TUI
 ```
 
 Requires Termux on aarch64. The installer fetches the latest
-release, installs `opencode2` + `opencode2.bin` under `$PREFIX`, links
-`opencode` → `opencode2`, and verifies with `opencode2 --version`.
+release, **verifies it against `SHA256SUMS`**, installs the wrapper +
+binary under `$PREFIX`, links `opencode` → `opencode2`, and verifies with
+`opencode2 --version`.
 
-To uninstall:
+### Installer options
+
+Append options to the command:
 
 ```sh
-rm -f "$PREFIX/bin/opencode" "$PREFIX/bin/opencode2"
-rm -rf "$PREFIX/libexec/opencode2"
+bash <(curl -fsSL https://raw.githubusercontent.com/astreele/opencode-android/master/install.sh) --cmd opencode
 ```
+
+| Option | Effect |
+| --- | --- |
+| `--cmd opencode` | **Run from just the `opencode` command.** Installs `opencode` + `libexec/opencode/opencode.bin` only — no `opencode2` name, no symlink. |
+| `--cmd opencode2` | Default: install `opencode2` and link `opencode` → `opencode2`. |
+| `--no-link` | Install `opencode2` but never touch an existing `$PREFIX/bin/opencode` (keeps a v1 command working). |
+| `--force` | Replace an existing `opencode` that this installer does not manage (it names the package owner if one is found). |
+| `--no-verify` | Skip the `SHA256SUMS` check — emergency use only; verification is on by default. |
+
+`OPENCODE_CMD` / `OPENCODE_FORCE=1` are the environment equivalents of
+`--cmd` / `--force`.
+
+If `$PREFIX/bin/opencode` already exists and is not managed by this
+installer, the default run **leaves it alone** and tells you: v2 stays
+available as `opencode2`, and you choose explicitly whether to take over
+the `opencode` command (`--force`, or `--cmd opencode`).
+
+### Uninstall
+
+Zip install (adjust to the command you chose):
+
+```sh
+rm -f  "$PREFIX/bin/opencode2" "$PREFIX/bin/opencode"   # drop the ones you have
+rm -rf "$PREFIX/libexec/opencode2" "$PREFIX/libexec/opencode"
+rm -f  "$PREFIX/share/doc/opencode2/LICENSE" "$PREFIX/share/doc/opencode/LICENSE"
+```
+
+Package install:
+
+```sh
+apt remove opencode2      # deb (runs prerm/postrm, stops the service)
+pacman -R opencode2       # pacman
+```
+
+## Install via package manager (deb / pacman)
+
+Every release also ships a Termux `.deb` and a pacman `.pkg.tar.xz`
+(`opencode2_<ver>-1_aarch64.deb`, `opencode2-<ver>-1-aarch64.pkg.tar.xz` —
+the `-1` is the package revision, bumped for packaging-only fixes):
+
+```sh
+# deb
+apt install ./opencode2_2.0.24-1_aarch64.deb     # or: dpkg -i <file>
+# pacman
+pacman -U ./opencode2-2.0.24-1-aarch64.pkg.tar.xz
+```
+
+The packages carry maintainer scripts the zip path cannot: they stop a
+stale background daemon on install/upgrade (otherwise the new TUI times out
+waiting for the old service), verify `--version`, and clean up on removal.
+They also ship the `opencode` → `opencode2` link, so dpkg/pacman own it —
+no out-of-band `ln -sf` over another package's file.
+
+Upgrades: the packages are published on GitHub Releases, not in a repo
+endpoint, so `pkg upgrade opencode2` will not fetch them — download the
+newer asset from the release page and re-run the same `apt install ./…` /
+`pacman -U …` command. The package manager still tracks ownership, so
+`apt remove` / `pacman -R` fully uninstall.
+
+## Migrating from v1
+
+- **Zip installer:** never silently overwrites an existing, non-managed
+  `opencode` command. You get an explicit note plus v2 as `opencode2`, and
+  decide: `--force` to take over, `--no-link` to keep both untouched, or
+  `--cmd opencode` to install v2 directly under that name.
+- **Package:** `opencode2` declares `Conflicts: opencode, opencode1` and
+  `Replaces: opencode, opencode1`, so apt removes the v1 package cleanly
+  before installing (raw `dpkg -i` fails loudly with the same message
+  instead of half-overwriting v1).
 
 ## Releases
 
 Built every Monday 03:00 UTC from the latest stable upstream `v2.*` tag
 (`anomalyco/opencode`), plus manual runs. Each release publishes:
-`opencode2-<ver>-android-aarch64.zip`, Termux `.deb`, pacman `.pkg.tar.xz`,
-`SHA256SUMS`. A release is created only when upstream moved.
+`opencode2-<ver>-android-aarch64.zip`, Termux `.deb`
+(`opencode2_<ver>-1_aarch64.deb`), pacman `.pkg.tar.xz`, `SHA256SUMS`
+(verified by the installer). A release is created only when upstream moved.
 
 ## How it works
 

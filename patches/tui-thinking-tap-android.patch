@@ -1,0 +1,40 @@
+From: opencode-android <opencode-android@localhost>
+Subject: [PATCH] tui: gate thinking-block expand on completion
+
+Tapping the streaming "Thinking" header (ReasoningPart, hide mode)
+calls toggle -> setExpanded while reasoning deltas are still arriving,
+which mounts the <code streaming> block mid-stream and aborts the
+native renderer on Android (SIGABRT in the TUI, no JS error logged).
+Tapping the completed "Thought" header mounts it with final content
+and is safe.
+
+Guard two ways:
+  * toggle() no-ops until the part is finalized (isDone)
+  * the onMouseUp handler is only attached once done, so no JS
+    mouse callback runs while the spinner is live
+
+Taps on a still-streaming thinking block become a no-op; expand
+works as soon as the block turns into "Thought".
+---
+ packages/tui/src/routes/session/message-parts.tsx | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/packages/tui/src/routes/session/message-parts.tsx b/packages/tui/src/routes/session/message-parts.tsx
+--- a/packages/tui/src/routes/session/message-parts.tsx
++++ b/packages/tui/src/routes/session/message-parts.tsx
+@@ -66,4 +66,7 @@ export function ReasoningPart(props: {
+   const toggle = () => {
+-    if (!inMinimal()) return
++    // Expanding while reasoning still streams mounts the <code> block
++    // mid-stream and aborts the native renderer on Android (tap SIGABRT).
++    // Keep taps during streaming a no-op; expand once the part is done.
++    if (!inMinimal() || !isDone()) return
+     setExpanded((prev) => !prev)
+   }
+@@ -78,5 +81,5 @@ export function ReasoningPart(props: {
+           paddingLeft={!inMinimal() || expanded() ? 1 : 0}
+         >
+-          <box onMouseUp={toggle}>
++          <box onMouseUp={isDone() ? toggle : undefined}>
+             <ReasoningHeader
+               toggleable={inMinimal()}

@@ -11,6 +11,10 @@ on:
         description: 'Upstream tag to build (e.g. v2.0.24). Empty = latest stable v2.'
         required: false
         default: ''
+      version_suffix:
+        description: 'Termux package revision. Bump (e.g. 2) when rebuilding the same upstream tag with new patches.'
+        required: false
+        default: '1'
 
 permissions:
   contents: write
@@ -26,6 +30,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       upstream_tag: ${{ steps.ver.outputs.upstream_tag }}
+      version_suffix: ${{ steps.ver.outputs.version_suffix }}
       release_tag: ${{ steps.ver.outputs.release_tag }}
       should_build: ${{ steps.ver.outputs.should_build }}
       reset: ${{ steps.ver.outputs.reset }}
@@ -39,6 +44,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           INPUT_TAG: ${{ inputs.upstream_tag }}
+          INPUT_SUFFIX: ${{ inputs.version_suffix }}
           EVENT: ${{ github.event_name }}
         run: |
           TAG="${INPUT_TAG}"
@@ -47,6 +53,7 @@ jobs:
               python3 -c "import json,sys; print(sorted([t['name'] for t in json.load(sys.stdin) if t['name'].startswith('v2.')], key=lambda v: [int(x) for x in v[1:].split('.')])[-1])")
           fi
           echo "upstream_tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version_suffix=${INPUT_SUFFIX:-1}" >> "$GITHUB_OUTPUT"
           echo "release_tag=${TAG}-android" >> "$GITHUB_OUTPUT"
           PKG=$(curl -fsSL "https://raw.githubusercontent.com/${REPO_UPSTREAM}/${TAG}/package.json")
           echo "$PKG" | python3 -c "import json,sys; d=json.load(sys.stdin); print('opentui_version='+d['workspaces']['catalog']['@opentui/core']); print('bun_version='+d['packageManager'].split('@')[1])" >> "$GITHUB_OUTPUT"
@@ -82,7 +89,7 @@ jobs:
       BUN_VERSION: ${{ needs.resolve.outputs.bun_version }}
       PTY_VERSION: ${{ needs.resolve.outputs.pty_version }}
       BUN_PTY_VERSION: ${{ needs.resolve.outputs.bun_pty_version }}
-      OPENCODE_VERSION: ${{ needs.resolve.outputs.upstream_tag }}-android-termux.1
+      OPENCODE_VERSION: ${{ needs.resolve.outputs.upstream_tag }}-android-termux.${{ needs.resolve.outputs.version_suffix }}
       OPENCODE_CHANNEL: android-termux
       BUN_COMPILE_RELEASE: bun-v${{ needs.resolve.outputs.bun_version }}
     steps:
@@ -196,6 +203,8 @@ jobs:
           git apply ../patches/cli-build-android.patch
           git apply --check ../patches/watcher-android.patch
           git apply ../patches/watcher-android.patch
+          git apply --check ../patches/tui-thinking-tap-android.patch
+          git apply ../patches/tui-thinking-tap-android.patch
 
       - name: Install JS deps
         run: |
