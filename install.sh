@@ -1,89 +1,116 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# RUNS ON: native Termux on device (aarch64 Android). Do NOT run in proot,
-# do NOT run on CI runners.
-# Install opencode2 (pure Android/aarch64 OpenCode) in native Termux.
-# Usage: bash install.sh  (or bash <(curl -fsSL <raw-url>/install.sh))
-# Env: VERSION (e.g. v2.0.24-android) to pin, REPO (default below),
-#   GITHUB_TOKEN (or GH_TOKEN) for private repos. No python/jq needed:
-#   JSON is parsed with grep/cut/awk (base Termux tools).
-set -euo pipefail
+set -e
 
-REPO="${REPO:-OWNER/opencode-android}"
-PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
-TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+REPO="astreele/opencode-android"
+PREFIX="${PREFIX:-$PREFIX}"
 
-STEP=0
-step() { STEP=$((STEP+1)); echo "[$STEP $(date +%H:%M:%S)] ==> $*"; }
-ok() { echo "[$STEP $(date +%H:%M:%S)] OK: $*"; }
-fail() { echo "[$STEP $(date +%H:%M:%S)] FAILED: $*" >&2; exit 1; }
+echo "[1] Resolving latest release..."
 
-[ "$(uname -m)" = "aarch64" ] || fail "needs aarch64, got $(uname -m)"
-[ -d "$PREFIX" ] || fail "not Termux native (no $PREFIX); don't run inside proot"
-command -v curl >/dev/null || fail "curl missing: pkg install curl"
-command -v unzip >/dev/null || fail "unzip missing: pkg install unzip"
-command -v awk >/dev/null || fail "awk missing: pkg install gawk"
+API="https://api.github.com/repos/${REPO}/releases/latest"
 
-CURL_AUTH=()
-[ -n "$TOKEN" ] && CURL_AUTH=(-H "Authorization: Bearer $TOKEN")
-API="https://api.github.com/repos/${REPO}"
+TAG=$(curl -fsSL "$API" |
+    awk -F'"' '/"tag_name"/ {print $4; exit}')
 
-step "resolving version (REPO=$REPO)"
-if [ -n "${VERSION:-}" ]; then TAG="$VERSION"; else
-  TAG=$(curl -fsSL "${CURL_AUTH[@]}" "$API/releases/latest" | \
-    grep -o '"tag_name": *"[^"]*"' | head -n 1 | cut -d'"' -f4) || \
-    fail "could not resolve latest release"
+if [ -z "$TAG" ]; then
+    echo "FAILED: could not resolve latest release"
+    exit 1
 fi
-[ -n "${TAG:-}" ] || fail "could not resolve latest release"
+
 echo "TAG=$TAG"
 
-step "installing dependencies (ripgrep, libc++ for parcel watcher)"
-pkg install -y ripgrep libc++
+echo "[2] Installing dependencies..."
 
-step "downloading release"
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+pkg update -y
+pkg install -y curl unzip grep ripgrep libc++
+
+echo "[3] Creating temporary directory..."
+
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+
 cd "$TMP"
-if [ -n "$TOKEN" ]; then
-  # Private repo: browser download URLs refuse token auth, so resolve the
-  # files through the release API and download with octet-stream accept.
-  REL_JSON=$(curl -fsSL "${CURL_AUTH[@]}" "$API/releases/tags/$TAG") || \
-    fail "could not read release $TAG (check token repo access)"
-  ZIP=$(echo "$REL_JSON" | grep -o '"name": *"opencode2-.*-android-aarch64\.zip"' | head -n 1 | cut -d'"' -f4)
-  [ -n "${ZIP:-}" ] || fail "no android zip in release $TAG"
-  asset_url() {
-    echo "$REL_JSON" | awk -v name="$1" '
-      /"url": *"[^"]*\/assets\/[0-9]+"/ { if (match($0, /https:[^"]*/)) url = substr($0, RSTART, RLENGTH) }
-      $0 ~ "\"name\": *\"" name "\"" { if (url != "") print url }'
-  }
-  for f in SHA256SUMS "$ZIP"; do
-    curl -fsSL "${CURL_AUTH[@]}" -H "Accept: application/octet-stream" \
-      "$(asset_url "$f")" -o "$f" || fail "download failed: $f"
-  done
-else
-  curl -fSL -O "https://github.com/${REPO}/releases/download/${TAG}/SHA256SUMS"
-  ZIP=$(grep -o "opencode2-.*-android-aarch64.zip" SHA256SUMS | head -n 1)
-  [ -n "${ZIP:-}" ] || fail "no android zip in release $TAG"
-  curl -fSL -O "https://github.com/${REPO}/releases/download/${TAG}/${ZIP}"
+
+echo "[4] Getting release information..."
+
+RELEASE_API="https://api.github.com/repos/${REPO}/releases/tags/${TAG}"
+
+RELEASE=$(curl -fsSL "$RELEASE_API")
+
+echo "[5] Finding Android ARM64 binary..."
+
+ZIP=$(printf '%s\n' "$RELEASE" |
+    grep -oE '"name"[[:space:]]*:[[:space:]]*"[^"]*android[^"]*aarch64[^"]*\.zip"' |
+    head -n 1 |
+    cut -d '"' -f 4)
+
+if [ -z "$ZIP" ]; then
+    echo
+    echo "FAILED: could not find Android ARM64 ZIP."
+    echo
+    echo "Available release assets:"
+    printf '%s\n' "$RELEASE" |
+        grep -oE '"name"[[:space:]]*:[[:space:]]*"[^"]+"' |
+        cut -d '"' -f 4
+    echo
+    exit 1
 fi
-sha256sum -c <(grep "$ZIP" SHA256SUMS) || fail "checksum mismatch"
-ok "$ZIP verified"
 
-step "stopping running server (installed binary is busy)"
-"$PREFIX/bin/opencode2" service stop 2>/dev/null || true
-sleep 1
+echo "Found: $ZIP"
+
+DOWNLOAD="https://github.com/${REPO}/releases/download/${TAG}/${ZIP}"
+
+echo "[6] Downloading..."
+
+curl -fL --retry 3 -o "$ZIP" "$DOWNLOAD"
+
+echo "[7] Extracting..."
+
+unzip -o "$ZIP"
+
+if [ ! -f opencode2 ]; then
+    echo "FAILED: opencode2 not found in archive"
+    exit 1
+fi
+
+if [ ! -f opencode2.bin ]; then
+    echo "FAILED: opencode2.bin not found in archive"
+    exit 1
+fi
+
+echo "[8] Stopping existing OpenCode..."
+
+if [ -x "$PREFIX/bin/opencode2" ]; then
+    "$PREFIX/bin/opencode2" service stop 2>/dev/null || true
+fi
+
 pkill -f "libexec/opencode2/opencode2.bin" 2>/dev/null || true
+
 sleep 1
 
-step "installing to $PREFIX"
-unzip -o -q "$ZIP"
-mkdir -p "$PREFIX/bin" "$PREFIX/libexec/opencode2"
+echo "[9] Installing..."
+
+mkdir -p "$PREFIX/bin"
+mkdir -p "$PREFIX/libexec/opencode2"
+
 cp -f opencode2 "$PREFIX/bin/opencode2"
 cp -f opencode2.bin "$PREFIX/libexec/opencode2/opencode2.bin"
-chmod 755 "$PREFIX/bin/opencode2" "$PREFIX/libexec/opencode2/opencode2.bin"
-# Intentional: v2 becomes the default `opencode` (side-by-side not promised).
-ln -sf "$PREFIX/bin/opencode2" "$PREFIX/bin/opencode" 2>/dev/null || true
-ok "files installed"
 
-step "verifying"
-command -v opencode2
-opencode2 --version
-ok "done. Run: opencode2 auth  (then: opencode2)"
+chmod 755 "$PREFIX/bin/opencode2"
+chmod 755 "$PREFIX/libexec/opencode2/opencode2.bin"
+
+ln -sf "$PREFIX/bin/opencode2" "$PREFIX/bin/opencode"
+
+echo "[10] Verifying..."
+
+"$PREFIX/bin/opencode2" --version
+
+echo
+echo "================================"
+echo " OpenCode installed successfully"
+echo "================================"
+echo
+echo "Run:"
+echo "  opencode2 auth"
+echo
+echo "Then:"
+echo "  opencode2"
