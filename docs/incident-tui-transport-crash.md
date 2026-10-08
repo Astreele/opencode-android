@@ -104,6 +104,8 @@ UnknownError: An error occurred in Effect.tryPromise
    useful for the upstream issue, not required for the fix.
 2. File upstream issue (opencode `fff-bun`/`libfff_c` SIGSEGV on this
    tree) with the minimal reproducer.
-3. After `opencode service restart` picks up the new env, verify the TUI
-   opens in `~/DroidDeck` and `~/opencode-android`.
+3. ~~After `opencode service restart` picks up the new env, verify the TUI
+   opens in `~/DroidDeck` and `~/opencode-android`.~~ DONE 2026-10-08:
+   TUI in `~/DroidDeck` renders full frames (12 KB, exit 124 = healthy
+   timeout) with the fff-disabled service; daemon survives.
    `service status` / any `api` call revives a crashed daemon.
