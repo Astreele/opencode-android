@@ -41,11 +41,13 @@ unset OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER || true
 # "Transport: Unable to connect" instead of starting a fresh service.
 # Drop records whose process is gone so auto-start kicks in (kill -0 plus a
 # /proc cmdline check: builtins and files only, no extra dependencies).
+# SAW_LIVE tracks whether any record looked live at startup (retry gate below).
 STATE_DIR="${XDG_STATE_HOME:-${HOME:-}/.local/state}/opencode"
+SAW_LIVE=0
 if [ -d "$STATE_DIR" ]; then
     for record in "$STATE_DIR"/service-*.json; do
         [ -e "$record" ] || continue
-        pid="$(sed -n 's/^.*"pid":[ ]*\([0-9][0-9]*\).*$/\1/p' "$record")"
+        pid="$(sed -n 's/^.*"pid":[ ]*\([0-9][0-9]*\).*$/\1/p' "$record" 2>/dev/null)" || pid=""
         [ -n "$pid" ] || continue
         stale=1
         if kill -0 "$pid" 2>/dev/null; then
@@ -56,20 +58,111 @@ if [ -d "$STATE_DIR" ]; then
         if [ "$stale" = 1 ]; then
             echo "opencode: note: removing stale service record (pid $pid gone)" >&2
             rm -f "$record"
+        else
+            SAW_LIVE=1
         fi
     done
 fi
+
+# A service that dies between the check above and first contact fails the
+# same way. Retry once, then: restart the service, wait for its record, and
+# re-run. Strict gates so scripted/programmatic use never double-executes:
+# fast non-signal failure only (not 127 = broken install), never when a
+# live service exists now, never for lifecycle/management subcommands or
+# foreign servers, and never when the first attempt could have mutated
+# anything (retry with a previously-live service only for interactive TUI
+# boots, which cannot act without the user).
+wants_retry() {
+    rc=$1; elapsed=$2; shift 2
+    [ "$rc" -ne 0 ] || return 1
+    case "$rc" in 127|129|130|143) return 1 ;; esac
+    [ "$elapsed" -lt 12 ] || return 1
+    for a in "$@"; do
+        case "$a" in --standalone|--server) return 1 ;; esac
+    done
+    case "${1-}" in
+        service|serve|upgrade|update|uninstall|acp) return 1 ;;
+    esac
+    live_now=0
+    if [ -d "$STATE_DIR" ]; then
+        for record in "$STATE_DIR"/service-*.json; do
+            [ -e "$record" ] || continue
+            pid="$(sed -n 's/^.*"pid":[ ]*\([0-9][0-9]*\).*$/\1/p' "$record" 2>/dev/null)" || pid=""
+            [ -n "$pid" ] || continue
+            if kill -0 "$pid" 2>/dev/null; then
+                if [ ! -e "/proc/$pid/cmdline" ] || grep -qa opencode "/proc/$pid/cmdline" 2>/dev/null; then
+                    live_now=1
+                    break
+                fi
+            fi
+        done
+    fi
+    [ "$live_now" = 1 ] && return 1
+    if [ "$SAW_LIVE" = 1 ]; then
+        case "${1-}" in
+            ""|mini) ;;
+            -*) case "$1" in --prompt) return 1 ;; esac ;;
+            *) [ -d "${1-}" ] || return 1 ;;
+        esac
+    fi
+    return 0
+}
+
+# Resolve the binary once, then run (waiting, not exec: a single retry below
+# needs the exit code; it is preserved verbatim on the way out).
+BIN=""
 for candidate in \
     "$DIR/../libexec/opencode2/opencode2.bin" \
     "$PREFIX/libexec/opencode2/opencode2.bin" \
     "$DIR/opencode2.bin"
 do
     if [ -x "$candidate" ]; then
-        exec "$candidate" "$@"
+        BIN="$candidate"
+        break
     fi
 done
-echo "opencode2: error: could not find opencode2.bin" >&2
-exit 127
+if [ -z "$BIN" ]; then
+    echo "opencode2: error: could not find opencode2.bin" >&2
+    exit 127
+fi
+
+START=$(date +%s)
+RETRIED=0
+while :; do
+    # if/else: a bare failing call would trip `set -e` (errexit) above.
+    if "$BIN" "$@"; then
+        rc=0
+    else
+        rc=$?
+    fi
+    elapsed=$(( $(date +%s) - START ))
+    if [ "$RETRIED" = 0 ] && wants_retry "$rc" "$elapsed" "$@"; then
+        RETRIED=1
+        echo "opencode: note: service unreachable, restarted it, retrying…" >&2
+        "$BIN" service start >/dev/null 2>&1 || true
+        i=0
+        while [ "$i" -lt 15 ]; do
+            sleep 1 || true
+            live=0
+            if [ -d "$STATE_DIR" ]; then
+                for record in "$STATE_DIR"/service-*.json; do
+                    [ -e "$record" ] || continue
+                    pid="$(sed -n 's/^.*"pid":[ ]*\([0-9][0-9]*\).*$/\1/p' "$record" 2>/dev/null)" || pid=""
+                    [ -n "$pid" ] || continue
+                    if kill -0 "$pid" 2>/dev/null; then
+                        live=1
+                        break
+                    fi
+                done
+            fi
+            [ "$live" = 1 ] && break
+            i=$((i + 1))
+        done
+        START=$(date +%s)
+        continue
+    fi
+    exit "$rc"
+done
 WEOF
 chmod 755 "$STAGE/opencode2"
 cp -f "$CLI_BIN" "$STAGE/opencode2.bin"

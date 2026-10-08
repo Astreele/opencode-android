@@ -1,7 +1,7 @@
 # Artifact-shape tests for the shipped wrapper (the one scripts/package.sh
 # writes into the zip): .bin resolution in every supported layout, failure
-# mode, stale service-record cleanup, and the no-sidecar/no-runtime-hack
-# contract. The wrapper's shebang is
+# mode, stale service-record cleanup, single TUI retry, and the
+# no-sidecar/no-runtime-hack contract. The wrapper's shebang is
 # Termux-only by design, so tests invoke it as `sh <wrapper>` — everything
 # after the shebang (resolution, exec) is what runs on-device.
 
@@ -147,4 +147,94 @@ teardown() {
     assert_success
     assert_contains "$output" "9.9.9-test"
     assert_file_exists "$XDG_STATE_HOME/opencode/service-test.json"
+}
+
+# Programmable stand-in .bin: counts calls, fails TUI boots, obeys service.
+write_retry_stub() {
+    cat > "$1" <<EOF
+$HOST_SH
+echo "call: \$*" >> "\$CALLS"
+if [ "\${1-}" = service ] && [ "\${2-}" = start ]; then
+    sh "\$FAKESRV" 120 &
+    printf '{"url":"http://127.0.0.1:9","pid":%s}\n' "\$!" > "\$RECORD"
+    exit 0
+fi
+exit 1
+EOF
+    chmod 755 "$1"
+}
+
+write_sleep_stub() {
+    cat > "$1" <<EOF
+$HOST_SH
+echo "call: \$*" >> "\$CALLS"
+sleep 13
+exit 1
+EOF
+    chmod 755 "$1"
+}
+
+@test "wrapper restarts a missing service and retries a fast-failing TUI once" {
+    mkdir -p "$BATS_FILE_TMPDIR/lonely" "$XDG_STATE_HOME/opencode"
+    printf 'sleep 120\n' > "$XDG_STATE_HOME/opencode-fake-server"
+    export CALLS="$BATS_FILE_TMPDIR/calls.log" RECORD="$XDG_STATE_HOME/opencode/service-t.json" FAKESRV="$XDG_STATE_HOME/opencode-fake-server"
+    rm -f "$CALLS"
+    cp "$FLAT/opencode2" "$BATS_FILE_TMPDIR/lonely/opencode2"
+    write_retry_stub "$BATS_FILE_TMPDIR/lonely/opencode2.bin"
+    mkdir -p "$PREFIX_SANDBOX/empty"
+
+    run env PREFIX="$PREFIX_SANDBOX/empty" CALLS="$CALLS" RECORD="$RECORD" FAKESRV="$FAKESRV" sh "$BATS_FILE_TMPDIR/lonely/opencode2"
+    assert_status 1
+    assert_contains "$output" "retrying"
+    # exactly two TUI attempts (service start is not a TUI attempt)
+    [ "$(grep -c "^call: *$" "$CALLS")" -eq 2 ]
+    [ "$(grep -c "^call: service start$" "$CALLS")" -eq 1 ]
+}
+
+@test "wrapper does not retry when a live service exists" {
+    mkdir -p "$BATS_FILE_TMPDIR/lonely" "$XDG_STATE_HOME/opencode"
+    printf 'sleep 120\n' > "$XDG_STATE_HOME/opencode-fake-server"
+    chmod 755 "$XDG_STATE_HOME/opencode-fake-server"
+    "$XDG_STATE_HOME/opencode-fake-server" 120 &
+    LIVE=$!
+    printf '{"url":"http://127.0.0.1:9","pid":%s}\n' "$LIVE" > "$XDG_STATE_HOME/opencode/service-t.json"
+    export CALLS="$BATS_FILE_TMPDIR/calls2.log"
+    rm -f "$CALLS"
+    cp "$FLAT/opencode2" "$BATS_FILE_TMPDIR/lonely/opencode2"
+    write_retry_stub "$BATS_FILE_TMPDIR/lonely/opencode2.bin"
+    mkdir -p "$PREFIX_SANDBOX/empty"
+
+    run env PREFIX="$PREFIX_SANDBOX/empty" CALLS="$CALLS" sh "$BATS_FILE_TMPDIR/lonely/opencode2"
+    assert_status 1
+    assert_not_contains "$output" "retrying"
+    [ "$(grep -c "^call: *$" "$CALLS")" -eq 1 ]
+    kill "$LIVE" 2>/dev/null || true
+}
+
+@test "wrapper never retries service management commands" {
+    mkdir -p "$BATS_FILE_TMPDIR/lonely"
+    export CALLS="$BATS_FILE_TMPDIR/calls3.log"
+    rm -f "$CALLS"
+    cp "$FLAT/opencode2" "$BATS_FILE_TMPDIR/lonely/opencode2"
+    write_retry_stub "$BATS_FILE_TMPDIR/lonely/opencode2.bin"
+    mkdir -p "$PREFIX_SANDBOX/empty"
+
+    run env PREFIX="$PREFIX_SANDBOX/empty" CALLS="$CALLS" sh "$BATS_FILE_TMPDIR/lonely/opencode2" service status
+    assert_status 1
+    assert_not_contains "$output" "retrying"
+    [ "$(grep -c . "$CALLS")" -eq 1 ]
+}
+
+@test "wrapper does not retry slow failures" {
+    mkdir -p "$BATS_FILE_TMPDIR/lonely"
+    export CALLS="$BATS_FILE_TMPDIR/calls4.log"
+    rm -f "$CALLS"
+    cp "$FLAT/opencode2" "$BATS_FILE_TMPDIR/lonely/opencode2"
+    write_sleep_stub "$BATS_FILE_TMPDIR/lonely/opencode2.bin"
+    mkdir -p "$PREFIX_SANDBOX/empty"
+
+    run env PREFIX="$PREFIX_SANDBOX/empty" CALLS="$CALLS" sh "$BATS_FILE_TMPDIR/lonely/opencode2"
+    assert_status 1
+    assert_not_contains "$output" "retrying"
+    [ "$(grep -c . "$CALLS")" -eq 1 ]
 }
