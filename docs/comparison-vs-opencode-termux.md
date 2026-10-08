@@ -83,6 +83,15 @@ of age.
 
 ## 3. P1 — engineering maturity
 
+> **Status (2026-10-08): item 5 fixed** — `tests/` now holds four bats suites
+> (`install.bats`, `package.bats`, `wrapper.bats`, `vendor.bats`) plus a
+> `tests/run.sh` runner (bootstraps a pinned bats-core when absent) and a
+> `tests.yml` CI job on every push/PR. Coverage matches the three bullets below:
+> installer + `package.sh` tests, an artifact-shape suite (wrapper `.bin`
+> resolution, deb/pacman/SHA256SUMS shape), and a golden checksum for the
+> vendored natives. The inline `readelf`/`nm` gates were factored into
+> `scripts/check-elf.sh` so they are assertable and re-runnable locally.
+
 5. **Zero automated tests.** No `tests/`, no test job in the workflow (grep confirms the
    only `test` in `build-weekly.yml` is the Bun version assertion, line 181). Their setup:
    `tests/unit/*.bats` (5 suites), golden regression (`tests/transplant/test_golden.py`
@@ -109,12 +118,11 @@ of age.
    `tests/smoke-device.sh` the maintainer runs before publishing, with results pasted
    into the release body.
 
-8. **Dead external reference.** `docs/REPORT.md:88` points at
-   `~/opencode-android-failure-logs.md` — a file that is not in the repo (you split it
-   out in `5e77b66` but never published it). Entries 7–9 are cited as the justification
-   for the current architecture, so the evidence chain is currently unverifiable by
-   readers. Their equivalent lives in-repo (`docs/incidents/…`, `ops-lessons-rc3.md`,
-   `99-open-issues-and-upstream-sync.md`).
+8. **Dead external reference — fixed.** `docs/REPORT.md` previously pointed at an
+   unpublished failure-log file outside the repo (split out in `5e77b66` but never
+   published), leaving the entries 7–9 justification for the current architecture
+   unverifiable by readers. The external pointer has been removed; the architecture
+   rationale now stands on its own in `docs/REPORT.md`.
 
 9. **No `.gitignore`.** `work/`, `out/`, `upstream/` are all created by the scripts; a
    local run makes the tree dirty with gigabytes of candidates to commit accidentally.

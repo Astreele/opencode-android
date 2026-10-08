@@ -84,8 +84,7 @@ opencode2 (wrapper, sh)
 No sidecar `.so`, no `LD_PRELOAD`, no `OTUI_ASSET_ROOT`, no patchelf in the
 shipped packages: `opencode2` + `opencode2.bin` only. (An earlier revision
 used an `OTUI_ASSET_ROOT` override with a musl lib + 4-symbol shim; retired
-once the CI bionic lib proved out — see failure log entries 7–9 in
-`~/opencode-android-failure-logs.md`.)
+once the CI bionic lib proved out.)
 
 Watcher notes (`patches/watcher-android.patch`): upstream
 `getBackend()` had no `android` case, so directory watches returned empty

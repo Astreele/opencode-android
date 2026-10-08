@@ -331,10 +331,7 @@ jobs:
           python3 scripts/patch-fff-embedded.py upstream
           FFBLIB=$(ls upstream/node_modules/.bun/@ff-labs+fff-bin-android-arm64@*/node_modules/@ff-labs/fff-bin-android-arm64/libfff_c.so 2>/dev/null || \
             ls upstream/node_modules/@ff-labs/fff-bin-android-arm64/libfff_c.so)
-          readelf -d "$FFBLIB" | grep NEEDED
-          if readelf -d "$FFBLIB" | grep -q "libc.so.6"; then
-            echo "glibc-linked fff lib in android slot" >&2; exit 1
-          fi
+          bash scripts/check-elf.sh --no-glibc "$FFBLIB"
 
       - name: Swap CI bionic lib into the npm musl slot (embed pure bionic)
         # Overwriting that file makes the binary self-contained: no musl
@@ -342,10 +339,7 @@ jobs:
         run: |
           MUSL_PKG=$(ls -d upstream/node_modules/.bun/@opentui+core-linux-arm64-musl@*/node_modules/@opentui/core-linux-arm64-musl)
           cp -v out/libopentui.so "$MUSL_PKG/libopentui.so"
-          readelf -d "$MUSL_PKG/libopentui.so" | grep NEEDED
-          if nm -D -u "$MUSL_PKG/libopentui.so" | grep -q "__errno_location"; then
-            echo "musl-ism leaked into staged lib" >&2; exit 1
-          fi
+          bash scripts/check-elf.sh --no-errno-location "$MUSL_PKG/libopentui.so"
 
       - name: Swap CI android PTY natives into embed slots
         # Daemon binary: android build goes into the linux-arm64-musl npm slot,
@@ -360,10 +354,7 @@ jobs:
           RUSTPTY_DST=$(ls upstream/node_modules/.bun/bun-pty@*/node_modules/bun-pty/rust-pty/target/release/librust_pty_arm64.so 2>/dev/null || \
             ls upstream/node_modules/bun-pty/rust-pty/target/release/librust_pty_arm64.so)
           cp -v out/librust_pty_arm64.so "$RUSTPTY_DST"
-          readelf -d "$RUSTPTY_DST" | grep NEEDED
-          if readelf -d "$RUSTPTY_DST" | grep -q "libc.so.6"; then
-            echo "glibc-linked cdylib leaked into android build" >&2; exit 1
-          fi
+          bash scripts/check-elf.sh --no-glibc "$RUSTPTY_DST"
 
       - name: Build CLI (android)
         # --skip-install: embed deps were fetched verbatim in the step above.

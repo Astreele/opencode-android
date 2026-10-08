@@ -136,6 +136,20 @@ Built every Monday 03:00 UTC from the latest stable upstream `v2.*` tag
 
 Full story: [`docs/REPORT.md`](docs/REPORT.md).
 
+## Testing
+
+Automated tests (bats) cover the installer, packaging and the shipped
+artifacts — no device or network needed:
+
+```sh
+bash tests/run.sh                  # syntax checks + all suites
+bash tests/run.sh install          # one suite
+bash tests/run.sh --update-golden  # refresh vendor golden checksums
+```
+
+CI runs them on every push and PR (`.github/workflows/tests.yml`).
+See [`tests/README.md`](tests/README.md) for details.
+
 ## Credits
 
 This project builds on the work of many:

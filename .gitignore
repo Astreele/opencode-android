@@ -1,0 +1,22 @@
+# Build artifacts
+/work/
+/out/
+/upstream/
+/dist/
+
+# Package caches
+node_modules/
+/.bun/
+/npm-debug.log*
+/yarn-debug.log*
+/yarn-error.log*
+
+# Editor/OS
+*.swp
+*~
+.DS_Store
+
+# Local tool caches
+.cargo/
+/zig-cache/
+/.cache/

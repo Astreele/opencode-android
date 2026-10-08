@@ -1,0 +1,31 @@
+name: tests
+
+# Fast gates on every push/PR: shell syntax, installer behavior (stubbed
+# network + package manager), package/wrapper artifact shape, and ELF checks
+# on the vendored natives. No device, no upstream checkout, no network.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install test dependencies
+        run: sudo apt-get update && sudo apt-get install -y bats zip unzip xz-utils binutils shellcheck
+
+      - name: Lint (shellcheck/actionlint)
+        run: |
+          bash -c 'shellcheck -S warning -x install.sh scripts/*.sh tests/run.sh scripts/check-elf.sh' 2>&1 | tail -40
+          shellcheck --version | head -1
+          # actionlint if available
+          if command -v actionlint >/dev/null 2>&1; then
+            actionlint
+          else
+            curl -fsSL https://github.com/rhysd/actionlint/releases/download/v1.7.4/actionlint_1.7.4_linux_amd64.tar.gz | tar xz -C /tmp actionlint 2>/dev/null && /tmp/actionlint --version && /tmp/actionlint
+          fi
