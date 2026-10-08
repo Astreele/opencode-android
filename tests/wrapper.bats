@@ -1,6 +1,7 @@
 # Artifact-shape tests for the shipped wrapper (the one scripts/package.sh
 # writes into the zip): .bin resolution in every supported layout, failure
-# mode, and the no-sidecar/no-runtime-hack contract. The wrapper's shebang is
+# mode, stale service-record cleanup, and the no-sidecar/no-runtime-hack
+# contract. The wrapper's shebang is
 # Termux-only by design, so tests invoke it as `sh <wrapper>` — everything
 # after the shebang (resolution, exec) is what runs on-device.
 
@@ -33,6 +34,15 @@ setup() {
     PREFIX_SANDBOX="$BATS_FILE_TMPDIR/prefix"
     rm -rf "$PREFIX_SANDBOX"
     mkdir -p "$PREFIX_SANDBOX"
+    # hermetic service-record dir: the wrapper preflight scans
+    # $XDG_STATE_HOME/opencode, which must never be the real one here
+    export XDG_STATE_HOME="$BATS_FILE_TMPDIR/xdg"
+    rm -rf "$XDG_STATE_HOME"
+    mkdir -p "$XDG_STATE_HOME"
+}
+
+teardown() {
+    pkill -f opencode-fake-server 2>/dev/null || true
 }
 
 @test "zip contains only opencode2, opencode2.bin and LICENSE (no sidecar libs)" {
@@ -52,6 +62,7 @@ setup() {
     assert_not_contains "$body" "LD_PRELOAD"
     assert_not_contains "$body" "patchelf"
     assert_not_contains "$body" "OTUI_ASSET_ROOT"
+    assert_contains "$body" "stale service record"   # dead-daemon cleanup
 
     run sh -n "$FLAT/opencode2"
     assert_success
@@ -96,4 +107,44 @@ setup() {
     run -127 env PREFIX="$PREFIX_SANDBOX/empty" sh "$BATS_FILE_TMPDIR/lonely/opencode2" --version
     assert_status 127
     assert_contains "$output" "could not find opencode2.bin"
+}
+
+@test "wrapper drops a stale service record and still resolves .bin" {
+    mkdir -p "$XDG_STATE_HOME/opencode"
+    # pid 999999999 can never be alive; the record must go, the .bin must win
+    printf '{"url":"http://127.0.0.1:9","pid":999999999}\n' > "$XDG_STATE_HOME/opencode/service-test.json"
+    run env PREFIX="$PREFIX_SANDBOX" sh "$FLAT/opencode2" --version
+    assert_success
+    assert_contains "$output" "9.9.9-test"
+    assert_contains "$output" "stale service record"
+    assert_file_absent "$XDG_STATE_HOME/opencode/service-test.json"
+}
+
+@test "wrapper keeps a live service record" {
+    mkdir -p "$XDG_STATE_HOME/opencode"
+    # stand-in server: cmdline contains "opencode" like the real daemon's
+    printf 'sleep 120\n' > "$XDG_STATE_HOME/opencode-fake-server"
+    sh "$XDG_STATE_HOME/opencode-fake-server" &
+    LIVE=$!
+    printf '{"url":"http://127.0.0.1:9","pid":%s}\n' "$LIVE" > "$XDG_STATE_HOME/opencode/service-test.json"
+    run env PREFIX="$PREFIX_SANDBOX" sh "$FLAT/opencode2" --version
+    assert_success
+    assert_contains "$output" "9.9.9-test"
+    assert_file_exists "$XDG_STATE_HOME/opencode/service-test.json"
+    kill "$LIVE" 2>/dev/null || true
+}
+
+@test "wrapper ignores a missing state dir" {
+    run env PREFIX="$PREFIX_SANDBOX" XDG_STATE_HOME="$BATS_FILE_TMPDIR/no-such-dir" sh "$FLAT/opencode2" --version
+    assert_success
+    assert_contains "$output" "9.9.9-test"
+}
+
+@test "wrapper keeps an unparseable service record" {
+    mkdir -p "$XDG_STATE_HOME/opencode"
+    printf '{not json}\n' > "$XDG_STATE_HOME/opencode/service-test.json"
+    run env PREFIX="$PREFIX_SANDBOX" sh "$FLAT/opencode2" --version
+    assert_success
+    assert_contains "$output" "9.9.9-test"
+    assert_file_exists "$XDG_STATE_HOME/opencode/service-test.json"
 }

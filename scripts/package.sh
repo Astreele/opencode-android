@@ -36,6 +36,29 @@ export PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 export LD_LIBRARY_PATH="${PREFIX}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 # Stale var from pre-watcher builds (v2 ignored it anyway); never force-disable.
 unset OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER || true
+# A dead background service can leave a stale service-*.json record behind;
+# the CLI then trusts the dead URL and the TUI dies with
+# "Transport: Unable to connect" instead of starting a fresh service.
+# Drop records whose process is gone so auto-start kicks in (kill -0 plus a
+# /proc cmdline check: builtins and files only, no extra dependencies).
+STATE_DIR="${XDG_STATE_HOME:-${HOME:-}/.local/state}/opencode"
+if [ -d "$STATE_DIR" ]; then
+    for record in "$STATE_DIR"/service-*.json; do
+        [ -e "$record" ] || continue
+        pid="$(sed -n 's/^.*"pid":[ ]*\([0-9][0-9]*\).*$/\1/p' "$record")"
+        [ -n "$pid" ] || continue
+        stale=1
+        if kill -0 "$pid" 2>/dev/null; then
+            if [ ! -e "/proc/$pid/cmdline" ] || grep -qa opencode "/proc/$pid/cmdline" 2>/dev/null; then
+                stale=0
+            fi
+        fi
+        if [ "$stale" = 1 ]; then
+            echo "opencode: note: removing stale service record (pid $pid gone)" >&2
+            rm -f "$record"
+        fi
+    done
+fi
 for candidate in \
     "$DIR/../libexec/opencode2/opencode2.bin" \
     "$PREFIX/libexec/opencode2/opencode2.bin" \
