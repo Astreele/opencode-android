@@ -41,3 +41,17 @@ the change is acknowledged:
 ```sh
 bash tests/run.sh --update-golden
 ```
+
+## On-device smoke (`smoke-device.sh`, manual)
+
+`tests/smoke-device.sh` is **not** part of `run.sh` or CI: it runs on a real
+Termux device against the *installed* build. The maintainer runs it before
+publishing a release and pastes the printed report block into the release
+notes. Probes (no provider auth needed): `--version`, service
+stop/start/status round-trip (restores prior state), `server.info`, full PTY
+lifecycle (`pty.create` → exit 0 → `pty.remove`), session create/delete, TUI
+frames under `script(1)`, and watcher evidence (`subscribe`+`started` for the
+scratch project, live `type=directory backend=inotify`) from the server log.
+Every capture is also scanned for native-load failure signatures
+(`__errno_location`, `libc.so.6`, dlopen errors). Needs `util-linux`
+(`script`) and `coreutils` (`timeout`) on the device.

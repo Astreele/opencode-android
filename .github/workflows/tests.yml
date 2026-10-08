@@ -20,7 +20,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y bats zip unzip xz-utils binutils shellcheck
 
       - name: Lint shell scripts (shellcheck)
-        run: shellcheck -S warning -x install.sh scripts/*.sh tests/run.sh
+        run: shellcheck -S warning -x install.sh scripts/*.sh tests/*.sh
 
       - name: Lint workflows (actionlint)
         run: |

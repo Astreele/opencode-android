@@ -36,7 +36,7 @@ test:
 	bash tests/run.sh $(TEST)
 
 lint:
-	shellcheck -S warning -x install.sh scripts/*.sh tests/run.sh
+	shellcheck -S warning -x install.sh scripts/*.sh tests/*.sh
 	if command -v actionlint >/dev/null 2>&1; then actionlint; else echo "actionlint not installed, skipping workflow lint"; fi
 
 check-vendor:

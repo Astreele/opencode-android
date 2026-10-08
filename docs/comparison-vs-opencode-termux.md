@@ -111,14 +111,21 @@ of age.
    `vendor/` cache note). Their README ships five copy-paste build commands backed by
    `docs/make-maintainer.md`.
 
-7. **No on-device acceptance record.** Your only runtime check is `opencode2 --version`
-   at install time (`install.sh:111`). TUI reachability, watcher `subscribe`, and PTY
-   spawn are claimed in the README but nothing in-repo proves them per release. Their
-   model: `make selfcheck`, `tui_probe` gate written into `report.json`,
-   `tools/upgrade-matrix.sh` against a real device, plus
-   `docs/30-ci-local-build-matrix.md` and `handover/release-runbook.md`. Fix: a
-   `tests/smoke-device.sh` the maintainer runs before publishing, with results pasted
-   into the release body.
+7. **No on-device acceptance record — fixed.** The only runtime check was
+   `opencode2 --version` at install time, with TUI reachability, watcher
+   `subscribe`, and PTY spawn claimed but unproven per release.
+   `tests/smoke-device.sh` is now the maintainer-run acceptance script
+   (documented in README + `tests/README.md`): against the installed build it
+   probes `--version`, a service stop/start/status round-trip (restores prior
+   state), `server.info`, a full PTY lifecycle (`pty.create` → exit 0 →
+   `pty.remove`), session create/delete, TUI frames under `script(1)`, and
+   watcher evidence (`subscribe`+`started` for the scratch project, live
+   `type=directory backend=inotify`) from the server log — all without
+   provider auth, with every capture scanned for native-load failure
+   signatures. It prints a report block for the release notes. Their model
+   (`make selfcheck`, `tui_probe` gate, `tools/upgrade-matrix.sh`,
+   `docs/30-ci-local-build-matrix.md`, `handover/release-runbook.md`) is the
+   same shape: a human-run device gate with pasted results.
 
 8. **Dead external reference — fixed.** `docs/REPORT.md` previously pointed at an
    unpublished failure-log file outside the repo (split out in `5e77b66` but never

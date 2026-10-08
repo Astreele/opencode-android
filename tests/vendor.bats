@@ -8,9 +8,9 @@ GOLDEN="$REPO_ROOT/tests/golden/vendor.sha256"
 
 # The three shipped natives (globs deliberately exclude *.sha256 sidecars).
 VENDORED=(
-    "$REPO_ROOT"/vendor/libopentui-0.5.14-android-aarch64.so
-    "$REPO_ROOT"/vendor/librust_pty-0.4.9-android-aarch64.so
-    "$REPO_ROOT"/vendor/opencode-pty-0.2.0-android-aarch64
+    "$REPO_ROOT"/vendor/libopentui-*android-aarch64.so
+    "$REPO_ROOT"/vendor/librust_pty-*android-aarch64.so
+    "$REPO_ROOT"/vendor/opencode-pty-*android-aarch64
 )
 
 require_elf_tools() {

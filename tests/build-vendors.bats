@@ -12,7 +12,7 @@ setup() {
 
 # Versions matching the files committed under vendor/.
 vendored_env() {
-    export OPENTUI_VERSION=0.5.14 PTY_VERSION=0.2.0 BUN_PTY_VERSION=0.4.9
+    export OPENTUI_VERSION=0.5.16 PTY_VERSION=0.2.0 BUN_PTY_VERSION=0.4.9
 }
 
 @test "--plan reports no builds needed when the cache is warm" {

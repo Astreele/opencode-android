@@ -150,6 +150,16 @@ bash tests/run.sh --update-golden  # refresh vendor golden checksums
 CI runs them on every push and PR (`.github/workflows/tests.yml`).
 See [`tests/README.md`](tests/README.md) for details.
 
+On-device acceptance (`tests/smoke-device.sh`) is separate: the maintainer
+runs it on a real Termux device before publishing a release — it probes the
+installed build (service lifecycle, PTY spawn, session CRUD, TUI frames,
+watcher subscribe + inotify, native-load signature scan) with no provider
+auth needed, and prints a report block to paste into the release notes:
+
+```sh
+bash tests/smoke-device.sh          # --cmd NAME to probe another command
+```
+
 ## Building from source
 
 Fast, local stages work anywhere via `make` (`make help` lists targets):
