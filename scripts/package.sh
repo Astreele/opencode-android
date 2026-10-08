@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# RUNS ON: Linux x86_64 CI runner (NOT on Termux, NOT on device).
 # Package the android build: zip + Termux deb + pacman archive + SHA256SUMS.
 # (The Termux paths inside are install *targets*, not the build host.)
+# Runs on Linux x86_64 CI and anywhere with zip/dpkg-deb/xz (incl. Termux);
+# `make package UPSTREAM_TAG=...` is the local entry point.
 # Env: REPO_ROOT, UPSTREAM_TAG (e.g. v2.0.24).
 # Inputs: $WORKSPACE/dist/cli/cli-linux-arm64-android/bin/opencode (from build).
 # The renderer is embedded in the binary (bionic lib swapped into the npm musl

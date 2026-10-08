@@ -19,13 +19,14 @@ jobs:
       - name: Install test dependencies
         run: sudo apt-get update && sudo apt-get install -y bats zip unzip xz-utils binutils shellcheck
 
-      - name: Lint (shellcheck/actionlint)
+      - name: Lint shell scripts (shellcheck)
+        run: shellcheck -S warning -x install.sh scripts/*.sh tests/run.sh
+
+      - name: Lint workflows (actionlint)
         run: |
-          bash -c 'shellcheck -S warning -x install.sh scripts/*.sh tests/run.sh scripts/check-elf.sh' 2>&1 | tail -40
-          shellcheck --version | head -1
-          # actionlint if available
           if command -v actionlint >/dev/null 2>&1; then
             actionlint
           else
-            curl -fsSL https://github.com/rhysd/actionlint/releases/download/v1.7.4/actionlint_1.7.4_linux_amd64.tar.gz | tar xz -C /tmp actionlint 2>/dev/null && /tmp/actionlint --version && /tmp/actionlint
+            curl -fsSL https://github.com/rhysd/actionlint/releases/download/v1.7.4/actionlint_1.7.4_linux_amd64.tar.gz | tar xz -C /tmp actionlint
+            /tmp/actionlint
           fi

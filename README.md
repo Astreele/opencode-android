@@ -150,6 +150,33 @@ bash tests/run.sh --update-golden  # refresh vendor golden checksums
 CI runs them on every push and PR (`.github/workflows/tests.yml`).
 See [`tests/README.md`](tests/README.md) for details.
 
+## Building from source
+
+Fast, local stages work anywhere via `make` (`make help` lists targets):
+
+```sh
+make test               # bats suite (TEST=install for one suite)
+make lint               # shellcheck (+ actionlint if installed)
+make check-vendor       # golden checksum + ELF gates for vendor/
+make package UPSTREAM_TAG=v2.0.24   # zip/deb/pacman from a prebuilt CLI
+make clean              # remove work/, out/, upstream/, dist/
+```
+
+`make package` needs the CI-built CLI at
+`dist/cli/cli-linux-arm64-android/bin/opencode`
+(override the workspace with `WORKSPACE=...`), plus `zip`, `dpkg-deb` and
+`xz` (`pkg install zip dpkg xz-utils` on Termux, `apt install zip
+dpkg-dev xz-utils` on Debian/Ubuntu). It fails clearly when the binary or
+`UPSTREAM_TAG` is missing.
+
+The full native build (upstream clone → patches → Zig/NDK renderer +
+cargo/NDK PTY natives → Bun compile → package → release) runs in CI on
+Linux x86_64 — see [`.github/workflows/build-weekly.yml`](.github/workflows/build-weekly.yml).
+To reproduce it by hand you need Zig 0.16, Android NDK r28b, Rust with the
+`aarch64-linux-android` target, and the Bun version pinned per release;
+`vendor/` caches the resulting natives per version so repeat builds skip
+the toolchain entirely (see `vendor/README.md`).
+
 ## Credits
 
 This project builds on the work of many:

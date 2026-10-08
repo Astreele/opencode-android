@@ -52,30 +52,36 @@ jobs:
             TAG=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${REPO_UPSTREAM}/tags?per_page=100" | \
               python3 -c "import json,sys; print(sorted([t['name'] for t in json.load(sys.stdin) if t['name'].startswith('v2.')], key=lambda v: [int(x) for x in v[1:].split('.')])[-1])")
           fi
-          echo "upstream_tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "version_suffix=${INPUT_SUFFIX:-1}" >> "$GITHUB_OUTPUT"
-          echo "release_tag=${TAG}-android" >> "$GITHUB_OUTPUT"
           PKG=$(curl -fsSL "https://raw.githubusercontent.com/${REPO_UPSTREAM}/${TAG}/package.json")
-          echo "$PKG" | python3 -c "import json,sys; d=json.load(sys.stdin); print('opentui_version='+d['workspaces']['catalog']['@opentui/core']); print('bun_version='+d['packageManager'].split('@')[1])" >> "$GITHUB_OUTPUT"
           CORE=$(curl -fsSL "https://raw.githubusercontent.com/${REPO_UPSTREAM}/${TAG}/packages/core/package.json")
-          echo "$CORE" | python3 -c "import json,sys; d=json.load(sys.stdin); print('pty_version='+d['dependencies']['@opencode-ai/pty']); print('bun_pty_version='+d['dependencies']['bun-pty'])" >> "$GITHUB_OUTPUT"
           if [ "$EVENT" = "workflow_dispatch" ]; then
             # manual trigger = force rebuild, even if the release exists
-            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            SHOULD_BUILD=true
             if gh release view "${TAG}-android" >/dev/null 2>&1; then
-              echo "reset=true" >> "$GITHUB_OUTPUT"
+              RESET=true
               echo "manual run: will delete existing release ${TAG}-android first"
             else
-              echo "reset=false" >> "$GITHUB_OUTPUT"
+              RESET=false
             fi
           elif gh release view "${TAG}-android" >/dev/null 2>&1; then
-            echo "should_build=false" >> "$GITHUB_OUTPUT"
-            echo "reset=false" >> "$GITHUB_OUTPUT"
+            SHOULD_BUILD=false
+            RESET=false
             echo "release ${TAG}-android already exists, skipping"
           else
-            echo "should_build=true" >> "$GITHUB_OUTPUT"
-            echo "reset=false" >> "$GITHUB_OUTPUT"
+            SHOULD_BUILD=true
+            RESET=false
           fi
+          # Single grouped write: one redirect satisfies SC2129 and keeps
+          # step outputs atomic.
+          {
+            echo "upstream_tag=$TAG"
+            echo "version_suffix=${INPUT_SUFFIX:-1}"
+            echo "release_tag=${TAG}-android"
+            echo "$PKG" | python3 -c "import json,sys; d=json.load(sys.stdin); print('opentui_version='+d['workspaces']['catalog']['@opentui/core']); print('bun_version='+d['packageManager'].split('@')[1])"
+            echo "$CORE" | python3 -c "import json,sys; d=json.load(sys.stdin); print('pty_version='+d['dependencies']['@opencode-ai/pty']); print('bun_pty_version='+d['dependencies']['bun-pty'])"
+            echo "should_build=$SHOULD_BUILD"
+            echo "reset=$RESET"
+          } >> "$GITHUB_OUTPUT"
 
   build:
     needs: resolve
@@ -155,7 +161,7 @@ jobs:
       - name: Install Zig
         if: steps.lib.outputs.mode == 'build' || steps.pty.outputs.mode == 'build'
         run: |
-          cd /tmp
+          cd /tmp || exit
           wget -q "https://ziglang.org/download/${ZIG_VERSION}/zig-x86_64-linux-${ZIG_VERSION}.tar.xz" -O zig.tar.xz
           tar xf zig.tar.xz
           echo "/tmp/zig-x86_64-linux-${ZIG_VERSION}" >> "$GITHUB_PATH"
@@ -166,7 +172,7 @@ jobs:
         if: steps.lib.outputs.mode == 'build' || steps.pty.outputs.mode == 'build'
         run: |
           if [ ! -d "$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64" ]; then
-            cd /tmp
+            cd /tmp || exit
             wget -q "https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip" -O ndk.zip
             sudo mkdir -p /opt
             sudo unzip -q ndk.zip -d /opt/
@@ -197,8 +203,8 @@ jobs:
 
       - name: Clone upstream + apply patches
         run: |
-          git clone --depth 1 --branch "${UPSTREAM_TAG}" https://github.com/${REPO_UPSTREAM}.git upstream
-          cd upstream
+          git clone --depth 1 --branch "${UPSTREAM_TAG}" "https://github.com/${REPO_UPSTREAM}.git" upstream
+          cd upstream || exit
           git apply --check ../patches/cli-build-android.patch
           git apply ../patches/cli-build-android.patch
           git apply --check ../patches/watcher-android.patch
@@ -209,11 +215,12 @@ jobs:
       - name: Install JS deps
         run: |
           export PATH="$HOME/.bun/bin:$PATH"
-          cd upstream
+          cd upstream || exit
           bun install --ignore-scripts
           # harden against truncated extraction (seen with some fetch paths)
           for f in node_modules/.bun/@opentelemetry+sdk-metrics@*/node_modules/@opentelemetry/sdk-metrics/build/esm/export/AggregationTemporality.js \
                    node_modules/.bun/@opentelemetry+resources@*/node_modules/@opentelemetry/resources/build/src/detect-resources.js; do
+            # shellcheck disable=SC2086  # $f holds glob patterns; expansion is intended
             if ! ls $f >/dev/null 2>&1; then echo "bun install looks truncated ($f)"; exit 1; fi
           done
 
@@ -286,7 +293,7 @@ jobs:
         # then uses --skip-install and stays deterministic.
         run: |
           export PATH="$HOME/.bun/bin:$PATH"
-          cd upstream
+          cd upstream || exit
           bun install --os="*" --cpu="*"
           ls -d node_modules/.bun/@opentui+core-linux-arm64-musl@*/node_modules/@opentui/core-linux-arm64-musl
           # Bun may skip os:android optionals even with --os="*"; fetch the
@@ -364,7 +371,7 @@ jobs:
         run: |
           export PATH="$HOME/.bun/bin:$PATH"
           export BUN_COMPILE_RELEASE OPENCODE_VERSION OPENCODE_CHANNEL
-          cd upstream/packages/cli
+          cd upstream/packages/cli || exit
           bun run script/build.ts --target=opencode-linux-arm64-android --skip-install --skip-web-ui --outdir="$GITHUB_WORKSPACE/dist/cli"
           ls -lh "$GITHUB_WORKSPACE/dist/cli/cli-linux-arm64-android/bin/opencode"
 

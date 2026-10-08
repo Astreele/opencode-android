@@ -102,12 +102,14 @@ of age.
      already run these inline — make them assertable and re-runnable);
    - a golden checksum for the vendored natives.
 
-6. **No local build path.** `scripts/*.sh` are explicitly CI-only (`package.sh:2`:
-   "RUNS ON: Linux x86_64 CI runner"), there is no `Makefile`, and the README has **no
-   "Building from source" section** at all — a contributor must reverse-engineer a
-   405-line workflow. Their README ships five copy-paste build commands backed by
-   `docs/make-maintainer.md`. Fix: a `Makefile` (or `scripts/build.sh`) that reproduces
-   the CI sequence locally, documented in the README.
+6. **No local build path — fixed.** `scripts/*.sh` were CI-only with no
+   `Makefile` and no "Building from source" section, forcing contributors to
+   reverse-engineer a 405-line workflow. A `Makefile` now reproduces every
+   locally-runnable stage (`make test`, `make lint`, `make check-vendor`,
+   `make package UPSTREAM_TAG=…`, `make clean`), and the README documents it
+   (prereqs, copy-paste commands, full-native-build pointer,
+   `vendor/` cache note). Their README ships five copy-paste build commands backed by
+   `docs/make-maintainer.md`.
 
 7. **No on-device acceptance record.** Your only runtime check is `opencode2 --version`
    at install time (`install.sh:111`). TUI reachability, watcher `subscribe`, and PTY
@@ -124,12 +126,17 @@ of age.
    unverifiable by readers. The external pointer has been removed; the architecture
    rationale now stands on its own in `docs/REPORT.md`.
 
-9. **No `.gitignore`.** `work/`, `out/`, `upstream/` are all created by the scripts; a
-   local run makes the tree dirty with gigabytes of candidates to commit accidentally.
-   Trivial fix.
+9. **No `.gitignore` — fixed.** The scripts create `work/`, `out/`, `upstream/`
+   (plus `dist/`), which used to dirty the tree with gigabytes of accidental
+   commit candidates after a local run. A `.gitignore` now covers all
+   generated dirs plus package caches and editor files.
 
-10. **No lint job.** 405 lines of workflow YAML + 4 scripts, no `shellcheck`/`actionlint`.
-    Their `make selfcheck` + bats at least gate shell changes.
+10. **No lint job — fixed.** There was no `shellcheck`/`actionlint` coverage for
+    405 lines of workflow YAML + scripts. `tests.yml` now runs `shellcheck
+    -S warning` over `install.sh`/`scripts/`/`tests/run.sh` plus `actionlint`
+    over both workflows on every push/PR, and the inline `run:` scripts were
+    fixed to pass it (`cd … || exit`, quoted URLs, grouped `$GITHUB_OUTPUT`
+    writes). Their `make selfcheck` + bats at least gate shell changes.
 
 ---
 
