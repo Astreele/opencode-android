@@ -36,6 +36,10 @@ export PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 export LD_LIBRARY_PATH="${PREFIX}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 # Stale var from pre-watcher builds (v2 ignored it anyway); never force-disable.
 unset OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER || true
+# fff (native file finder) segfaults the server on some project content
+# (incident: TUI Transport crash in git projects; ripgrep fallback keeps
+# the same UX with less RAM, so keep the native indexer off everywhere).
+export OPENCODE_DISABLE_FFF=1
 # A dead background service can leave a stale service-*.json record behind;
 # the CLI then trusts the dead URL and the TUI dies with
 # "Transport: Unable to connect" instead of starting a fresh service.

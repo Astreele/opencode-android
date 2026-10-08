@@ -1,6 +1,8 @@
 # Incident: TUI `Transport: Unable to connect` in project directories
 
-Date: 2026-10-08 · Status: OPEN — trigger file being isolated.
+Date: 2026-10-08 · Status: ROOT CAUSE CONFIRMED + FIX SHIPPED
+(fff native indexer segfaults on vcs-project content; disabled via
+`OPENCODE_DISABLE_FFF=1` in the wrapper).
 Affects: `opencode`/`opencode2` v2.0.24-android-termux.1 on-device (Termux).
 
 ## 1. Symptoms (verbatim user report)
@@ -41,10 +43,15 @@ UnknownError: An error occurred in Effect.tryPromise
   `DroidDeck/` → `app/` → `app/src/main/assets/` → `directaudio/` crash.
   Clean: `steam-startup/` (incl. `.webm`), `graphics_driver/` (incl.
   `.tzst` archives), the lone ELF `.so` (68 KiB).
-- **Remaining suspects** (untested — boot starvation NOPW'd the runs):
-  `aarch64-windows/winedirectaudio.drv` (512 KiB, `MZx` magic),
-  `i386-windows/winedirectaudio.drv` (16 KiB, `MZx` magic).
-  Exact power-of-two sizes + `MZx` = likely placeholder binaries.
+- **Root cause: fff native indexer.** Same `app/` content WITHOUT `.git`
+  above it renders fine; fff-disabled server + full `DroidDeck/` renders
+  fine (11 KB frames, zero errors). So the crash needs vcs-context AND
+  fff enabled — no single file is at fault. `Fff.create({basePath})`
+  (content indexing/mmap, selected for vcs projects per
+  `packages/core/src/filesystem/search.ts`) segfaults deterministically
+  (SIGSEGV @ 0x0) while indexing this tree. Fix: `OPENCODE_DISABLE_FFF=1`
+  (ripgrep fallback keeps the same UX); upstream prebuilt native lib,
+  not patchable here.
 
 ## 3. Eliminated causes (with evidence)
 
@@ -86,21 +93,17 @@ UnknownError: An error occurred in Effect.tryPromise
   `uninstall`/`acp`, `--standalone`, `--server`, slow failures, signals,
   exit 127, or when a live service exists — so scripted use can never
   double-execute (10 bats tests green, 51/51 full suite).
+- Wrapper exports `OPENCODE_DISABLE_FFF=1` (template + live install):
+  the native file indexer stays off everywhere; ripgrep fallback.
 - `set -e` post-mortem: replacing `exec` with a waiting call silently
   disabled everything until guarded with if/else — covered in tests.
 
 ## 6. To finish (in order)
 
-1. Confirm the trigger file (`aarch64-windows` vs `i386-windows` `.drv`).
-2. Identify the crashing component: fff content indexing (mmap?) vs
-   parcel watcher vs listing serializer — read the panic-adjacent native
-   frame if reproducible under a debugger, else bisect by file feature
-   (magic bytes? exact size?).
-3. If the crash is on a path this repo's patches introduced
-   (`watcher-android.patch` android→inotify mapping): guard/fallback
-   in-repo.
-4. If upstream native code: file upstream issue with the minimal
-   reproducer (single file + `serve` + TUI boot) and ship the best
-   available mitigation (ignore rule, env knob, documented workaround).
-5. Workarounds meanwhile: open the TUI outside the trigger subtree;
+1. Narrow the fff trigger if cheap (single `.drv` file? `.git` objects?):
+   useful for the upstream issue, not required for the fix.
+2. File upstream issue (opencode `fff-bun`/`libfff_c` SIGSEGV on this
+   tree) with the minimal reproducer.
+3. After `opencode service restart` picks up the new env, verify the TUI
+   opens in `~/DroidDeck` and `~/opencode-android`.
    `service status` / any `api` call revives a crashed daemon.

@@ -63,6 +63,7 @@ teardown() {
     assert_not_contains "$body" "patchelf"
     assert_not_contains "$body" "OTUI_ASSET_ROOT"
     assert_contains "$body" "stale service record"   # dead-daemon cleanup
+    assert_contains "$body" "OPENCODE_DISABLE_FFF=1"  # native indexer off (SIGSEGV fix)
 
     run sh -n "$FLAT/opencode2"
     assert_success
