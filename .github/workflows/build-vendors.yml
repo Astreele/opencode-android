@@ -25,7 +25,7 @@ on:
         required: false
         default: ''
       opentui_version:
-        description: 'libopentui version (empty = resolve from upstream_tag, else 0.5.14)'
+        description: 'libopentui version (empty = resolve from upstream_tag, else 0.5.16)'
         required: false
         default: ''
       pty_version:
@@ -73,7 +73,7 @@ jobs:
           # Single grouped write (SC2129). Explicit inputs win, then the
           # upstream resolution, then the currently-vendored versions.
           {
-            echo "opentui_version=${INPUT_OPENTUI:-${OPENTUI_V:-0.5.14}}"
+            echo "opentui_version=${INPUT_OPENTUI:-${OPENTUI_V:-0.5.16}}"
             echo "pty_version=${INPUT_PTY:-${PTY_V:-0.2.0}}"
             echo "bun_pty_version=${INPUT_BUN_PTY:-${BUN_PTY_V:-0.4.9}}"
           } >> "$GITHUB_OUTPUT"
