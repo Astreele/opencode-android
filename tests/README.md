@@ -26,6 +26,7 @@ CI installs it with `apt-get install bats`.
 | `package.bats` | `scripts/package.sh`: artifact names, deb fields (Debian revision, `Conflicts`/`Replaces`), maintainer scripts, pacman `.PKGINFO`/install hooks, `SHA256SUMS` | `zip`, `dpkg-deb`, `xz`, `unzip` |
 | `wrapper.bats` | The shipped wrapper: `.bin` resolution in flat/installed/`$PREFIX` layouts, exit-127 failure mode, no sidecar `.so`, no `LD_PRELOAD`/`patchelf` | same as `package.bats` |
 | `vendor.bats` | Vendored natives: golden checksum, sidecar consistency, `scripts/check-elf.sh` gates (bionic aarch64, no glibc/musl/errno shim) + negative gate tests | `readelf`/`nm` (`binutils`) |
+| `build-vendors.bats` | `scripts/build-vendors.sh`: `--plan` output, cache-hit staging into `out/`, `--vendors` selection, usage errors, missing-toolchain failure | none (vendor cache only) |
 
 Missing optional dependencies cause those tests to be **skipped** with an
 install hint (Termux: `pkg install zip xz-utils binutils`; CI installs

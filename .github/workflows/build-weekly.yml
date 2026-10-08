@@ -124,42 +124,18 @@ jobs:
           sudo docker image prune --all --force 2>/dev/null || true
           df -h / /tmp
 
-      - name: Select renderer lib (vendored, or build)
-        id: lib
+      - name: Check vendor cache (or select vendors to build)
+        id: vendors
         env:
-          REPO_ROOT: ${{ github.workspace }}
-        run: |
-          VENDOR="vendor/libopentui-${OPENTUI_VERSION}-android-aarch64.so"
-          mkdir -p out
-          if [ -f "$VENDOR" ]; then
-            (cd vendor && sha256sum -c "libopentui-${OPENTUI_VERSION}-android-aarch64.so.sha256")
-            cp -v "$VENDOR" out/libopentui.so
-            echo "mode=vendored" >> "$GITHUB_OUTPUT"
-          else
-            echo "mode=build" >> "$GITHUB_OUTPUT"
-            echo "no vendored lib for opentui ${OPENTUI_VERSION}, will build from source"
-          fi
-
-      - name: Select PTY natives (vendored, or build)
-        id: pty
-        env:
-          REPO_ROOT: ${{ github.workspace }}
+          OPENTUI_VERSION: ${{ needs.resolve.outputs.opentui_version }}
+          PTY_VERSION: ${{ needs.resolve.outputs.pty_version }}
+          BUN_PTY_VERSION: ${{ needs.resolve.outputs.bun_pty_version }}
         run: |
           mkdir -p out
-          PTY_BIN="vendor/opencode-pty-${PTY_VERSION}-android-aarch64"
-          RUSTPTY_SO="vendor/librust_pty-${BUN_PTY_VERSION}-android-aarch64.so"
-          if [ -f "$PTY_BIN" ] && [ -f "$RUSTPTY_SO" ]; then
-            (cd vendor && sha256sum -c "$(basename "$PTY_BIN").sha256" "$(basename "$RUSTPTY_SO").sha256")
-            cp -v "$PTY_BIN" out/opencode-pty
-            cp -v "$RUSTPTY_SO" out/librust_pty_arm64.so
-            echo "mode=vendored" >> "$GITHUB_OUTPUT"
-          else
-            echo "mode=build" >> "$GITHUB_OUTPUT"
-            echo "no vendored pty natives for pty ${PTY_VERSION} / bun-pty ${BUN_PTY_VERSION}, will build from source"
-          fi
+          bash scripts/build-vendors.sh --plan >> "$GITHUB_OUTPUT"
 
       - name: Install Zig
-        if: steps.lib.outputs.mode == 'build' || steps.pty.outputs.mode == 'build'
+        if: steps.vendors.outputs.need_libopentui == 'true'
         run: |
           cd /tmp || exit
           wget -q "https://ziglang.org/download/${ZIG_VERSION}/zig-x86_64-linux-${ZIG_VERSION}.tar.xz" -O zig.tar.xz
@@ -169,7 +145,7 @@ jobs:
           zig version
 
       - name: Install Android NDK
-        if: steps.lib.outputs.mode == 'build' || steps.pty.outputs.mode == 'build'
+        if: steps.vendors.outputs.need_libopentui == 'true' || steps.vendors.outputs.need_pty == 'true'
         run: |
           if [ ! -d "$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64" ]; then
             cd /tmp || exit
@@ -180,7 +156,7 @@ jobs:
           fi
 
       - name: Install Rust Android target
-        if: steps.pty.outputs.mode == 'build'
+        if: steps.vendors.outputs.need_pty == 'true'
         run: |
           rustup target add aarch64-linux-android
           rustc --version
@@ -229,55 +205,19 @@ jobs:
           export PATH="$HOME/.bun/bin:$PATH"
           python3 scripts/patch-opentui-loader.py upstream
 
-      - name: Build libopentui.so (android, fallback when not vendored)
-        if: steps.lib.outputs.mode == 'build'
+      - name: Ensure vendors (stage cached, build missing, commit back)
+        # Always runs: verifies + stages the vendored natives into out/, builds
+        # whatever is missing from source, ELF-gates it, and commits new files
+        # straight back to vendor/ (same job, no loop: this workflow has no
+        # push trigger). Every later run reuses the committed files.
         env:
           REPO_ROOT: ${{ github.workspace }}
-        run: bash scripts/build-libopentui-ci.sh
-
-      - name: Vendor the built lib (commit back to repo)
-        # First build for a new opentui version lands here; every later run
-        # (weekly or manual) reuses vendor/ and skips the source build.
-        # No push trigger on this workflow, so this cannot self-trigger.
-        if: steps.lib.outputs.mode == 'build'
-        run: |
-          VENDOR="vendor/libopentui-${OPENTUI_VERSION}-android-aarch64.so"
-          cp -v out/libopentui.so "$VENDOR"
-          (cd vendor && sha256sum "$(basename "$VENDOR")" > "$(basename "$VENDOR").sha256")
-          git config user.name "opencode-android-bot"
-          git config user.email "opencode-android-bot@users.noreply.github.com"
-          git add "$VENDOR" "$VENDOR.sha256"
-          git commit -m "vendor libopentui ${OPENTUI_VERSION} android-aarch64 (CI-built)" || echo "nothing to commit"
-          git push
-
-      - name: Build PTY natives (android, fallback when not vendored)
-        if: steps.pty.outputs.mode == 'build'
-        env:
-          REPO_ROOT: ${{ github.workspace }}
-        run: bash scripts/build-pty-android-ci.sh
-
-      - name: Vendor the built PTY natives (commit back to repo)
-        # First build for new pty/bun-pty versions lands here; every later run
-        # reuses vendor/ and skips the source build.
-        # No push trigger on this workflow, so this cannot self-trigger.
-        if: steps.pty.outputs.mode == 'build'
-        run: |
-          PTY_BIN="vendor/opencode-pty-${PTY_VERSION}-android-aarch64"
-          RUSTPTY_SO="vendor/librust_pty-${BUN_PTY_VERSION}-android-aarch64.so"
-          cp -v out/opencode-pty "$PTY_BIN"
-          cp -v out/librust_pty_arm64.so "$RUSTPTY_SO"
-          (cd vendor && sha256sum "$(basename "$PTY_BIN")" > "$(basename "$PTY_BIN").sha256")
-          (cd vendor && sha256sum "$(basename "$RUSTPTY_SO")" > "$(basename "$RUSTPTY_SO").sha256")
-          git config user.name "opencode-android-bot"
-          git config user.email "opencode-android-bot@users.noreply.github.com"
-          git add "$PTY_BIN" "$PTY_BIN.sha256" "$RUSTPTY_SO" "$RUSTPTY_SO.sha256"
-          git commit -m "vendor pty ${PTY_VERSION} + rust_pty ${BUN_PTY_VERSION} android-aarch64 (CI-built)" || echo "nothing to commit"
-          git push
+        run: bash scripts/build-vendors.sh --commit
 
       - name: Clean Rust build dirs (early, before embed install)
         # cargo target/ dirs are GBs; the all-platform bun install below needs
         # room (workerd/darwin/win prebuilds). Final cleanup repeats this.
-        if: steps.pty.outputs.mode == 'build'
+        if: steps.vendors.outputs.need_pty == 'true'
         run: |
           rm -rf work/opencode-pty-*/target work/bun-pty-*/rust-pty/target ~/.cargo/registry/cache
           rm -f /tmp/ndk.zip /tmp/zig.tar.xz

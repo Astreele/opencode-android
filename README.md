@@ -158,6 +158,7 @@ Fast, local stages work anywhere via `make` (`make help` lists targets):
 make test               # bats suite (TEST=install for one suite)
 make lint               # shellcheck (+ actionlint if installed)
 make check-vendor       # golden checksum + ELF gates for vendor/
+make vendors            # verify vendor cache, stage natives into out/
 make package UPSTREAM_TAG=v2.0.24   # zip/deb/pacman from a prebuilt CLI
 make clean              # remove work/, out/, upstream/, dist/
 ```
@@ -168,6 +169,20 @@ make clean              # remove work/, out/, upstream/, dist/
 `xz` (`pkg install zip dpkg xz-utils` on Termux, `apt install zip
 dpkg-dev xz-utils` on Debian/Ubuntu). It fails clearly when the binary or
 `UPSTREAM_TAG` is missing.
+
+Vendor rebuilds (`scripts/build-vendors.sh`, also via `make vendors`) reuse
+the `vendor/` cache per native version and only build what is missing:
+
+```sh
+make vendors VENDORS=pty FORCE=1   # rebuild pty natives (needs cargo + NDK)
+```
+
+Rebuilding from source needs Zig 0.16 + NDK r28 (renderer) or cargo +
+NDK r28 (PTY); without `--commit` nothing is written back. Committing new
+vendor files happens in CI: the release workflow builds missing natives
+itself, and `.github/workflows/build-vendors.yml` (manual dispatch: pick
+`vendors`, set `force`, optionally resolve versions from `upstream_tag`)
+is the manual counterpart.
 
 The full native build (upstream clone → patches → Zig/NDK renderer +
 cargo/NDK PTY natives → Bun compile → package → release) runs in CI on

@@ -1,0 +1,155 @@
+name: build-vendors
+
+# Standalone vendor build: (re)build the Android natives
+# (libopentui, opencode-pty, librust_pty), verify them, and commit the result
+# back to vendor/. Manual dispatch only — pick which natives to build and
+# whether to rebuild them even when cached.
+#
+# The release workflow (build-weekly.yml) invokes scripts/build-vendors.sh
+# itself for cache misses; this workflow is the manual counterpart for new
+# native versions and forced rebuilds.
+on:
+  workflow_dispatch:
+    inputs:
+      vendors:
+        description: 'Which natives to build: all, libopentui, pty (comma combos allowed)'
+        required: false
+        default: 'all'
+      force:
+        description: 'Rebuild even if the vendor files already exist'
+        required: false
+        default: false
+        type: boolean
+      upstream_tag:
+        description: 'Upstream tag to resolve native versions from (e.g. v2.0.24). Empty = use the version inputs below.'
+        required: false
+        default: ''
+      opentui_version:
+        description: 'libopentui version (empty = resolve from upstream_tag, else 0.5.14)'
+        required: false
+        default: ''
+      pty_version:
+        description: 'opencode-pty version (empty = resolve from upstream_tag, else 0.2.0)'
+        required: false
+        default: ''
+      bun_pty_version:
+        description: 'bun-pty version (empty = resolve from upstream_tag, else 0.4.9)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+env:
+  ZIG_VERSION: 0.16.0
+  NDK_VERSION: r28b
+  NDK_DIR: /opt/android-ndk
+  REPO_UPSTREAM: anomalyco/opencode
+
+jobs:
+  resolve:
+    runs-on: ubuntu-24.04
+    outputs:
+      opentui_version: ${{ steps.ver.outputs.opentui_version }}
+      pty_version: ${{ steps.ver.outputs.pty_version }}
+      bun_pty_version: ${{ steps.ver.outputs.bun_pty_version }}
+    steps:
+      - name: Resolve native versions
+        id: ver
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.upstream_tag }}
+          INPUT_OPENTUI: ${{ inputs.opentui_version }}
+          INPUT_PTY: ${{ inputs.pty_version }}
+          INPUT_BUN_PTY: ${{ inputs.bun_pty_version }}
+        run: |
+          if [ -n "$INPUT_TAG" ]; then
+            PKG=$(curl -fsSL "https://raw.githubusercontent.com/${REPO_UPSTREAM}/${INPUT_TAG}/package.json")
+            CORE=$(curl -fsSL "https://raw.githubusercontent.com/${REPO_UPSTREAM}/${INPUT_TAG}/packages/core/package.json")
+            OPENTUI_V=$(echo "$PKG" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['workspaces']['catalog']['@opentui/core'])")
+            PTY_V=$(echo "$CORE" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['dependencies']['@opencode-ai/pty'])")
+            BUN_PTY_V=$(echo "$CORE" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['dependencies']['bun-pty'])")
+          fi
+          # Single grouped write (SC2129). Explicit inputs win, then the
+          # upstream resolution, then the currently-vendored versions.
+          {
+            echo "opentui_version=${INPUT_OPENTUI:-${OPENTUI_V:-0.5.14}}"
+            echo "pty_version=${INPUT_PTY:-${PTY_V:-0.2.0}}"
+            echo "bun_pty_version=${INPUT_BUN_PTY:-${BUN_PTY_V:-0.4.9}}"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: resolve
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      OPENTUI_VERSION: ${{ needs.resolve.outputs.opentui_version }}
+      PTY_VERSION: ${{ needs.resolve.outputs.pty_version }}
+      BUN_PTY_VERSION: ${{ needs.resolve.outputs.bun_pty_version }}
+      VENDORS: ${{ inputs.vendors }}
+      FORCE: ${{ inputs.force }}
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install host deps
+        run: sudo apt-get update && sudo apt-get install -y wget unzip xz-utils binutils
+
+      - name: Check vendor cache
+        id: plan
+        run: |
+          mkdir -p out
+          bash scripts/build-vendors.sh --plan >> "$GITHUB_OUTPUT"
+
+      - name: Free runner disk (early)
+        # NDK + Rust toolchains + cargo target dirs are GBs.
+        run: |
+          df -h / /tmp
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost \
+            /usr/share/swift /opt/microsoft
+          sudo docker image prune --all --force 2>/dev/null || true
+          df -h / /tmp
+
+      - name: Install Zig
+        if: steps.plan.outputs.need_libopentui == 'true'
+        run: |
+          cd /tmp || exit
+          wget -q "https://ziglang.org/download/${ZIG_VERSION}/zig-x86_64-linux-${ZIG_VERSION}.tar.xz" -O zig.tar.xz
+          tar xf zig.tar.xz
+          echo "/tmp/zig-x86_64-linux-${ZIG_VERSION}" >> "$GITHUB_PATH"
+          export PATH="/tmp/zig-x86_64-linux-${ZIG_VERSION}:$PATH"
+          zig version
+
+      - name: Install Android NDK
+        if: steps.plan.outputs.need_libopentui == 'true' || steps.plan.outputs.need_pty == 'true'
+        run: |
+          if [ ! -d "$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64" ]; then
+            cd /tmp || exit
+            wget -q "https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip" -O ndk.zip
+            sudo mkdir -p /opt
+            sudo unzip -q ndk.zip -d /opt/
+            sudo mv "/opt/android-ndk-${NDK_VERSION}" "$NDK_DIR"
+          fi
+
+      - name: Install Rust Android target
+        if: steps.plan.outputs.need_pty == 'true'
+        run: |
+          rustup target add aarch64-linux-android
+          rustc --version
+          cargo --version
+
+      - name: Build vendors (commit back to vendor/)
+        # New files are committed straight back to vendor/ (same job, no
+        # loop: this workflow has no push trigger). Force rebuilds land as
+        # new commits too. Built outputs are ELF-gated inside the script.
+        env:
+          REPO_ROOT: ${{ github.workspace }}
+        run: bash scripts/build-vendors.sh --commit
+
+      - name: Upload staged natives
+        uses: actions/upload-artifact@v4
+        with:
+          name: vendors-${{ needs.resolve.outputs.opentui_version }}-${{ needs.resolve.outputs.pty_version }}-${{ needs.resolve.outputs.bun_pty_version }}
+          path: out/*
+          if-no-files-found: warn

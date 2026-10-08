@@ -9,22 +9,26 @@
 #   make test [TEST=install]
 #   make lint
 #   make check-vendor
+#   make vendors [VENDORS=all|libopentui|pty] [FORCE=0|1]
 #   make package UPSTREAM_TAG=v2.0.24 [WORKSPACE=...] [WORK=...] [OUT=...]
 #   make clean
 
 TEST ?=
 UPSTREAM_TAG ?=
+VENDORS ?= all
+FORCE ?= 0
 WORKSPACE ?= $(CURDIR)
 WORK ?= $(CURDIR)/work
 OUT ?= $(CURDIR)/out
 
-.PHONY: help test lint check-vendor package clean
+.PHONY: help test lint check-vendor vendors package clean
 
 help:
 	@echo "Targets:"
 	@echo "  test          run the bats suite (TEST=<suite> for one suite)"
 	@echo "  lint          shellcheck scripts + actionlint workflows (if installed)"
 	@echo "  check-vendor  golden checksum + ELF gates for vendor/ natives"
+	@echo "  vendors       verify/stage vendor cache (VENDORS=..., FORCE=1 rebuilds)"
 	@echo "  package       build zip/deb/pacman from a prebuilt CLI (needs UPSTREAM_TAG)"
 	@echo "  clean         remove work/, out/, upstream/, dist/ (generated dirs)"
 
@@ -37,6 +41,9 @@ lint:
 
 check-vendor:
 	bash tests/run.sh vendor
+
+vendors:
+	VENDORS="$(VENDORS)" FORCE="$(FORCE)" WORKSPACE="$(WORKSPACE)" WORK="$(WORK)" OUT="$(OUT)" bash scripts/build-vendors.sh
 
 package:
 	@if [ -z "$(UPSTREAM_TAG)" ]; then echo "usage: make package UPSTREAM_TAG=v2.0.24" >&2; exit 1; fi
