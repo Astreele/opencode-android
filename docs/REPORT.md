@@ -39,7 +39,7 @@ Upstream repo: `anomalyco/opencode`, tag `v2.0.24`
      daemon into `@opencode-ai/pty-linux-arm64-musl`; the musl static binary
      runs on Android, but a rebuild is still needed for the TMPDIR socket fix);
    - `FFF_LIBC`: android→`"musl"` (harmless: the linux branch is dead on
-     android at runtime; the real fix is the fff embedded patch below).
+     android at runtime; fff itself is now disabled entirely, see 5).
    - `FFF_LIBC` and compile-time `process.env.OPENTUI_LIBC`: android→`"musl"`.
      Never `"android"`: the runtime loader **throws** for anything but
      unset/`glibc`/`musl`, so the first build's TUI was dead on arrival
@@ -53,12 +53,12 @@ Upstream repo: `anomalyco/opencode`, tag `v2.0.24`
    not the monorepo): `socket_root()` hardcoded `/tmp`, which is not writable
    on Android (owned `shell`, mode `0711`). Respect absolute `$TMPDIR`
    (Termux sets `$PREFIX/tmp`); socket path still fits `sun_path` (~89 chars).
-5. `patch-fff-embedded.py` (rewrite of installed `@ff-labs/fff-bun`, like the
-   loader patch): `src/embedded.ts` had no android branch, so the build fell
-   back to the musl `libfff_c.so` — whose undefined `__errno_location`/`bcmp`
-   fail `dlopen` on bionic (file finder silently dead). Points the android
-   branch at the official `@ff-labs/fff-bin-android-arm64` (pure bionic,
-   loads clean) by absolute path.
+5. `patch-fff-embedded.py` — REMOVED. It pointed fff's android branch at
+   the official `@ff-labs/fff-bin-android-arm64` (pure bionic) because the
+   musl `libfff_c.so` failed `dlopen` on bionic. Removed after the bundled
+   android lib proved to segfault the server while indexing some project
+   trees; file finding uses the ripgrep fallback instead
+   (`OPENCODE_DISABLE_FFF=1` in the wrapper), so no fff native ships at all.
 6. Loader mapping (`scripts/patch-opentui-loader.py`, anchor-based so chunk
    filename hashes don't matter): Bun's Android runtime reports
    `process.platform === "android"`, unknown to stock `@opentui/core`

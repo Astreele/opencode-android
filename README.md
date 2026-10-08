@@ -121,8 +121,8 @@ Built every Monday 03:00 UTC from the latest stable upstream `v2.*` tag
 - CLI: `bun build --compile` with Bun's official `android` base binary,
   plus small patches (`patches/`) mapping the build onto Android
   (watcher `android-arm64` binding, pty `android→musl` slot mapping,
-  official android `libfff_c.so`, musl opentui selection,
-  loader android→linux-musl mapping, `getBackend` android→inotify).
+  musl opentui selection, loader android→linux-musl mapping,
+  `getBackend` android→inotify).
 - Renderer: `libopentui.so` cross-compiled for bionic with Zig 0.16 + NDK
   r28, **vendored per version** under `vendor/` and embedded into the CLI
   (source builds run only when a new opentui version has no vendored lib —
@@ -224,8 +224,9 @@ This project builds on the work of many:
   daemon and `rust-pty` cdylib cross-compiled for Android.
 - [**@parcel/watcher**](https://github.com/parceljs/watcher) — directory
   watching via its official `android-arm64` (inotify) binding.
-- **@ff-labs** — the official bionic `libfff_c.so`
-  (`@ff-labs/fff-bin-android-arm64`) behind the file finder.
+- [**ripgrep**](https://github.com/BurntSushi/ripgrep) — file finding via
+  the ripgrep fallback (the fff native indexer is disabled: it segfaults
+  the server on some project trees).
 - [**Zig**](https://ziglang.org) and the [**Android NDK**](https://developer.android.com/ndk) —
   cross-compiling the renderer and PTY natives for bionic.
 - **The Termux community** — the packages, ports, and hard-won knowledge
