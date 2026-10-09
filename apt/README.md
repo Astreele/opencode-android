@@ -1,4 +1,4 @@
-# APT repository (`https://astreele.github.io/opencode-android`)
+# APT repository (`https://opencode-android-apt.psmsword148.workers.dev`)
 
 This directory holds the *client-side* files for the Termux package-manager
 install path; the published repository itself lives on the `gh-pages` branch

@@ -23,9 +23,9 @@ from just `opencode` — no `opencode2` name, no symlink.
   `aarch64`; there is no 32-bit build).
 - **~500 MB free** while installing (~200 MB once installed: the
   single-binary build plus its `ripgrep`/`libc++` dependencies).
-- **Network access** to `astreele.github.io` (package repository),
-  `raw.githubusercontent.com` and `github.com` (installer/key fallback),
-  plus your provider's API endpoints at runtime.
+- **Network access** to `opencode-android-apt.psmsword148.workers.dev`
+  (package repository), `raw.githubusercontent.com` and `github.com`
+  (installer/key fallback), plus your provider's API endpoints at runtime.
 - No root needed. The installer fetches its own dependencies (`curl`;
   the package pulls in `ripgrep` and `libc++` automatically).
 
@@ -43,7 +43,7 @@ opencode        # TUI
 ```
 
 The installer registers the signed APT repository
-(`https://astreele.github.io/opencode-android`), installs the `opencode2`
+(`https://opencode-android-apt.psmsword148.workers.dev`), installs the `opencode2`
 package with the system package manager (linking `opencode` → `opencode2`),
 and verifies with `opencode2 --version`. Later updates arrive through
 `pkg upgrade`, like any other program.
@@ -113,9 +113,9 @@ pkg upgrade            # updates opencode2 together with everything else
 Manual setup (if you ever need to redo it by hand — the installer does this):
 
 ```sh
-curl -fsSL https://astreele.github.io/opencode-android/opencode-android.gpg \
+curl -fsSL https://opencode-android-apt.psmsword148.workers.dev/opencode-android.gpg \
   -o "$PREFIX/etc/apt/trusted.gpg.d/opencode-android.gpg"
-echo "deb https://astreele.github.io/opencode-android stable main" \
+echo "deb https://opencode-android-apt.psmsword148.workers.dev stable main" \
   > "$PREFIX/etc/apt/sources.list.d/opencode-android.list"
 pkg update
 pkg install opencode2

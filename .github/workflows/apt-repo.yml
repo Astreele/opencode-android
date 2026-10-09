@@ -1,7 +1,7 @@
 name: apt-repo
 
 # Publishes .deb files from *-android releases to the signed APT repository
-# on the gh-pages branch (https://astreele.github.io/opencode-android).
+# on the gh-pages branch (https://opencode-android-apt.psmsword148.workers.dev).
 # install.sh registers that source, so `pkg install opencode2` works and
 # later updates arrive through `pkg upgrade` like any other program.
 #
@@ -41,8 +41,8 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       PAGES_BRANCH: gh-pages
       # pool: store .debs on the branch. none: index only (pool/… is served
-      # by the redirect worker in apt-worker/ — flip once it is live).
-      APT_POOL_MODE: pool
+      # by the redirect worker in apt-worker/ — live, so this stays none).
+      APT_POOL_MODE: none
     steps:
       - name: Checkout packaging scripts
         uses: actions/checkout@v4

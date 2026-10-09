@@ -12,26 +12,21 @@ release tag `v<ver>-android` (verified: both live 2.0.25/2.0.26 assets
 resolve). Non-pool paths are proxied straight to the Pages origin, so the
 worker's own domain serves the whole repository from a single `deb` line.
 
-## Deploy (one time, maintainer)
+## Deploy (one time, maintainer) — DONE
 
-```sh
-npm install -g wrangler
-wrangler login
-wrangler deploy      # note the https://<worker>.<account>.workers.dev URL
-```
+Live at `https://opencode-android-apt.psmsword148.workers.dev` (deployed
+via `wrangler deploy` from this directory; redeploy the same way after any
+`worker.js` change).
 
 ## Go live checklist
 
-The repository currently runs in `pool` mode (debs stored on the branch) so
-nothing breaks while the worker doesn't exist yet. To switch:
-
-1. Deploy the worker above; call its URL `WORKER_URL`.
-2. `.github/workflows/apt-repo.yml`: set `APT_POOL_MODE: none`.
-3. Point clients at it — replace `https://astreele.github.io/opencode-android`
-   with `WORKER_URL` in: `install.sh` (`APT_ROOT`), `apt/opencode-android.list`,
-   `README.md` (install section + manual setup), and here.
+1. ~~Deploy the worker~~ — done, URL above.
+2. ~~Set `APT_POOL_MODE: none`~~ — done in `.github/workflows/apt-repo.yml`.
+3. ~~Point clients at the worker URL~~ — `install.sh` (`APT_ROOT`),
+   `apt/opencode-android.list`, and `README.md` all use it.
 4. Dispatch the `apt-repo` workflow with `reset: true`: the branch is
    recreated metadata-only, evicting the stored debs (and their history).
+   Until this runs, the branch still serves its stored pool — harmless.
 5. Verify on a device: fresh `install.sh` run, `apt-cache policy opencode2`,
    and a `--download-only` install.
 

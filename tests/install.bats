@@ -206,7 +206,7 @@ teardown() {
 
     # repository registration landed under the sandbox prefix
     assert_contains "$(cat "$PREFIX_DIR/etc/apt/sources.list.d/opencode-android.list")" \
-        "deb https://astreele.github.io/opencode-android stable main"
+        "deb https://opencode-android-apt.psmsword148.workers.dev stable main"
     assert_file_exists "$PREFIX_DIR/etc/apt/trusted.gpg.d/opencode-android.gpg"
 
     # the pkg stub laid the packaged files down like apt would
