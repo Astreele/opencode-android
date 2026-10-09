@@ -1,9 +1,14 @@
 name: apt-repo
 
 # Publishes .deb files from *-android releases to the signed APT repository
-# on the gh-pages branch (https://opencode-android-apt.psmsword148.workers.dev).
+# on the gh-pages branch (served through the worker in apt-worker/).
 # install.sh registers that source, so `pkg install opencode2` works and
 # later updates arrive through `pkg upgrade` like any other program.
+#
+# Triggering: releases cut with GITHUB_TOKEN never fire downstream
+# `release: published` events, so build-weekly.yml dispatches this workflow
+# explicitly with the fresh tag after Create release. Manual dispatch works
+# too (empty tag = every *-android release; reset recreates the branch).
 #
 # One-time setup (maintainer):
 #   1. Enable Pages: repo Settings -> Pages -> Deploy from branch -> gh-pages.

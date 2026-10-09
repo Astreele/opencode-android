@@ -330,3 +330,11 @@ jobs:
             out/*.deb
             out/*.pkg.tar.xz
             out/SHA256SUMS
+
+      - name: Trigger APT repo publish
+        # Releases created with GITHUB_TOKEN never fire downstream
+        # `release: published` events, so publish the repo explicitly.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
+        run: gh workflow run apt-repo.yml --ref master -f tag="$RELEASE_TAG"
