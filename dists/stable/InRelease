@@ -1,0 +1,39 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+Origin: opencode-android
+Label: opencode-android
+Suite: stable
+Codename: stable
+Date: Fri, 09 Oct 2026 14:26:27 UTC
+Architectures: aarch64
+Components: main
+Description: OpenCode for Android/Termux
+MD5Sum:
+  082571c4c9d5aa1ba42f42c3374e475d              715 main/binary-aarch64/Packages
+  95916b65794deadd7906a1c2a1a14ae4              480 main/binary-aarch64/Packages.gz
+  df9318132b05b5720665f7aab40ad3fe              548 main/binary-aarch64/Packages.xz
+SHA1:
+  1c325effb174ed1b1960863542e4b7414f698c62              715 main/binary-aarch64/Packages
+  2e6c635d5560d0b29d1b35f94addf12ca0878774              480 main/binary-aarch64/Packages.gz
+  d9b37ea9ecbcf931e584602de34b7a37e92e7b18              548 main/binary-aarch64/Packages.xz
+SHA256:
+  db9f755a6c760617b99d9e2131c12344d087165fe64f0742a18308d15d1db13c              715 main/binary-aarch64/Packages
+  3b617b3717a9660f4d4c36e47c359a0fbff9be20d43a59b85f6808f404ac2422              480 main/binary-aarch64/Packages.gz
+  e77e23a42c9187eda412efd048c3cc0ccbe9d4b0d667e22ed964d1345cd77ac4              548 main/binary-aarch64/Packages.xz
+-----BEGIN PGP SIGNATURE-----
+
+iQIzBAEBCgAdFiEE0Z1YQi49iMPytdH9ATBk2pqcQSQFAmrI+ZMACgkQATBk2pqc
+QSTi4RAAqlkXZvv18yeraUyQ7PvD+kAoQqI1TLjNh/T8jTQuz4Q3SX5hGxfm2Tu1
+/jcwoeuRM2yGqLqm+LkMiq1xyuYNfqA7m9rX4FGg5xO6om+FdW2ys7+/ZEJwpBah
+0scdWPUEeI9J16D6BsmU7LUuPBhTyi9Le/+jo/jl2PpQgLfiIV51dC2FvjVTV3pO
+zponJmGhh/VGrGQv64XOt6fBzxYA7M5XuMykE2KyqXWkNVg8VGIHZoRcCQ45zU27
++YixWPmVbaGGO7hZjb1lxG5iByQRhI4EOE3wMVCtQZMTWEZ9s2QTm0rNZYCmBYJY
+0HO4bjrg7iz1OZ0LNGtYZ9iIP9RB+tN9BXSzuXW9HQ8ZQNZdV5RE0Ew0qk/QqwMn
+h/MBGA+GRk2hwLoOkstGOekEqpGrlvvTxE87NKYC9Dz441/BA3F5IMBmmTZ2yCLN
+IOl2yPN+z3fbYkCB8cGIkgs8ZY2SIX+R+HTNffQ4l43l5n7AMANSPAJLI4syWB3l
+ZHXfijB3zY41v5CoBTL04cyYC7If2tZSZvuvZTxIATe1lYLBFLPK1aWslHBWoCcq
+vqf4TKPhzQwwcoq2wf1XCiS7bJx3+dIFQWDzyziUY1TnKqxE6v/rR/NTGHMkxZYo
+paE5K9Ev+cUDL1jjP/NM3LAwETOZRqhcTixfye9+Od1vXTHIUQE=
+=Atgy
+-----END PGP SIGNATURE-----
