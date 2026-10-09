@@ -13,7 +13,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const m = url.pathname.match(
-      /^\/pool\/[^/]+\/[^/]+\/(opencode2_(.+)-(\d+)_aarch64\.deb)$,
+      /^\/pool\/[^\/]+\/[^\/]+\/(opencode2_(.+)-(\d+)_aarch64\.deb)$,
     );
     if (m) {
       const file = m[1];
