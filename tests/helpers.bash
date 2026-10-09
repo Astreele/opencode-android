@@ -31,19 +31,31 @@ make_sandbox() {
     PREFIX_DIR="$SANDBOX/prefix"
     mkdir -p "$STUBS" "$FIXTURE_DIR" "$PREFIX_DIR" "$SANDBOX/tmp"
     write_curl_stub
-    write_noop_stub pkg     # `pkg update/install` must never really run
+    write_pkg_stub      # `pkg update` is a no-op; `pkg install opencode2`
+                        # lays the fixture package into the sandbox $PREFIX
     write_noop_stub pkill   # must never kill a real serve daemon
     write_noop_stub sleep   # keep the suite fast
+    # Files the pkg stub installs for `pkg install opencode2`.
+    mkdir -p "$FIXTURE_DIR/pkgfiles"
+    write_test_wrapper "$FIXTURE_DIR/pkgfiles/opencode2"
+    write_stub_cli "$FIXTURE_DIR/pkgfiles/opencode2.bin" "9.9.9-test"
+    printf 'fake repository key\n' > "$FIXTURE_DIR/opencode-android.gpg"
 }
 
 # Run install.sh inside the sandbox. Network, pkg and pkill resolve to stubs
 # via PATH; everything else (curl parsing, unzip, sha256sum, symlinks) is real.
+# Default method is the package-manager path; use run_install_zip for the
+# legacy direct-download path.
 run_install() {
     run env PATH="$STUBS:$PATH" \
         FIXTURE_DIR="$FIXTURE_DIR" \
         PREFIX="$PREFIX_DIR" \
         TMPDIR="$SANDBOX/tmp" \
         bash "$REPO_ROOT/install.sh" "$@"
+}
+
+run_install_zip() {
+    run_install --zip "$@"
 }
 
 # ── stubs ──────────────────────────────────────────────────────────────
@@ -70,6 +82,8 @@ serve() {
 case "$url" in
     *releases/latest*)        serve "$FIXTURE_DIR/latest.json" ;;
     *releases/tags/*)         serve "$FIXTURE_DIR/release.json" ;;
+    *opencode-android.gpg*)   [ -f "$FIXTURE_DIR/opencode-android.gpg" ] || exit 22
+                              serve "$FIXTURE_DIR/opencode-android.gpg" ;;
     *SHA256SUMS*)             [ -f "$FIXTURE_DIR/SHA256SUMS" ] || exit 22
                               serve "$FIXTURE_DIR/SHA256SUMS" ;;
     *releases/download/*)     name="${url##*/}"
@@ -79,6 +93,30 @@ case "$url" in
 esac
 EOF
     chmod 755 "$STUBS/curl"
+}
+
+# Test double for pkg: dependency installs and `pkg update` are no-ops, but
+# `pkg install ... opencode2` lays the fixture package files into $PREFIX —
+# mirroring what the real deb owns (wrapper, .bin, command link, license).
+write_pkg_stub() {
+    cat > "$STUBS/pkg" <<'EOF'
+#!/bin/sh
+if [ "${1:-}" != install ]; then exit 0; fi
+shift
+for a in "$@"; do
+    case "$a" in opencode2) do_install=1 ;; esac
+done
+if [ "${do_install:-0}" = 1 ]; then
+    mkdir -p "$PREFIX/bin" "$PREFIX/libexec/opencode2" "$PREFIX/share/doc/opencode2"
+    cp "$FIXTURE_DIR/pkgfiles/opencode2" "$PREFIX/bin/opencode2"
+    cp "$FIXTURE_DIR/pkgfiles/opencode2.bin" "$PREFIX/libexec/opencode2/opencode2.bin"
+    chmod 755 "$PREFIX/bin/opencode2" "$PREFIX/libexec/opencode2/opencode2.bin"
+    ln -sf opencode2 "$PREFIX/bin/opencode"
+    printf 'MIT test license\n' > "$PREFIX/share/doc/opencode2/LICENSE"
+fi
+exit 0
+EOF
+    chmod 755 "$STUBS/pkg"
 }
 
 write_noop_stub() {

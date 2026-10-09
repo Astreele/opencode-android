@@ -4,23 +4,37 @@
 #
 #   bash <(curl -fsSL https://raw.githubusercontent.com/astreele/opencode-android/master/install.sh)
 #
+# Default: registers the signed APT repository
+# (https://astreele.github.io/opencode-android) and installs/upgrades the
+# opencode2 package with the system package manager. Later updates then
+# arrive through `pkg upgrade`, like any other program.
+#
 # Options (append after the command):
 #   --cmd opencode     install ONLY as `opencode` (run from just that command;
-#                      no opencode2 name, no symlink)
+#                      no opencode2 name, no symlink; implies --zip because
+#                      the deb always ships opencode2 + the opencode link)
 #   --cmd opencode2    default: install opencode2 + link opencode -> opencode2
-#   --no-link          never touch $PREFIX/bin/opencode
+#   --no-link          never touch $PREFIX/bin/opencode (implies --zip)
 #   --force            replace an existing opencode this installer doesn't manage
-#   --no-verify        skip SHA256SUMS verification (emergency only)
+#   --apt              force the package-manager path (default)
+#   --zip              legacy direct-download path (zip asset + SHA256SUMS check)
+#   --no-verify        (zip only) skip SHA256SUMS verification (emergency only)
 #
 set -e
 
 REPO="astreele/opencode-android"
+APT_ROOT="https://astreele.github.io/opencode-android"
+# The key URL is overridable for tests; the raw.githubusercontent copy is the
+# fallback for devices reaching GitHub before Pages serves the branch.
+APT_KEY_URL="${APT_KEY_URL:-$APT_ROOT/opencode-android.gpg}"
+APT_KEY_FALLBACK="https://raw.githubusercontent.com/${REPO}/master/apt/opencode-android.gpg"
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 
 CMD="${OPENCODE_CMD:-opencode2}"
 LINK=1
 FORCE="${OPENCODE_FORCE:-0}"
 VERIFY=1
+METHOD="auto"
 
 usage() {
     cat <<'EOF'
@@ -31,23 +45,31 @@ Usage: install.sh [options]
 Options:
   --cmd NAME    Which command to install: 'opencode2' (default) or 'opencode'.
                 '--cmd opencode' installs the program so it runs from just
-                the `opencode` command — no opencode2 name, no symlink.
+                the `opencode` command — no opencode2 name, no symlink
+                (uses the --zip path; the deb always ships both names).
   --link        Create/refresh the `opencode` -> `opencode2` symlink
                 (default for --cmd opencode2).
   --no-link     Install opencode2 but never touch $PREFIX/bin/opencode
-                (use when a v1 `opencode` should keep working).
+                (use when a v1 `opencode` should keep working; uses --zip).
   --force       Replace an existing $PREFIX/bin/opencode that this installer
                 does not manage (e.g. a v1 install). Without this flag such a
                 file is left untouched and v2 stays available as `opencode2`.
-  --no-verify   Skip SHA256SUMS verification. The installer verifies the
-                download digest by default; only use this in an emergency.
+  --apt         Install through the system package manager (default):
+                registers the signed APT repository and runs
+                `pkg install opencode2`. Later updates arrive via `pkg upgrade`.
+  --zip         Legacy path instead: download the release zip, verify it
+                against SHA256SUMS, and copy the files by hand.
+  --no-verify   (zip only) Skip SHA256SUMS verification. The installer
+                verifies the download digest by default; only use this in an
+                emergency.
   -h, --help    Show this help.
 
 Environment: OPENCODE_CMD (same as --cmd), OPENCODE_FORCE=1 (same as --force).
 
 Examples:
-  install.sh                      # opencode2 + opencode symlink (default)
-  install.sh --cmd opencode       # just the `opencode` command
+  install.sh                      # opencode2 via pkg (default) + opencode symlink
+  install.sh --zip                # same layout, direct download instead of pkg
+  install.sh --cmd opencode       # just the `opencode` command (zip path)
   install.sh --no-link            # opencode2 only, leave v1's opencode alone
 EOF
 }
@@ -88,6 +110,8 @@ while [ $# -gt 0 ]; do
         --link) LINK=1; shift ;;
         --no-link) LINK=0; shift ;;
         --force) FORCE=1; shift ;;
+        --apt) METHOD="apt"; shift ;;
+        --zip) METHOD="zip"; shift ;;
         --no-verify) VERIFY=0; shift ;;
         -h|--help) usage; exit 0 ;;
         *) echo "unknown option: $1" >&2; usage >&2; exit 1 ;;
@@ -99,104 +123,218 @@ case "$CMD" in
     *) die "--cmd must be 'opencode' or 'opencode2' (got '$CMD')" ;;
 esac
 
-echo "[1] Resolving latest release..."
-
-API="https://api.github.com/repos/${REPO}/releases/latest"
-
-TAG=$(curl -fsSL "$API" |
-    awk -F'"' '/"tag_name"/ {print $4; exit}')
-
-if [ -z "$TAG" ]; then
-    die "could not resolve latest release"
+# The deb always ships opencode2 + the opencode link, so single-name and
+# no-link installs can only come from the zip path.
+if [ "$METHOD" = "apt" ]; then
+    if [ "$CMD" = "opencode" ]; then
+        die "--cmd opencode needs --zip (the deb always ships opencode2 + the opencode link)"
+    fi
+    if [ "$LINK" = 0 ]; then
+        die "--no-link needs --zip (the deb always ships the opencode link)"
+    fi
+elif [ "$METHOD" = "auto" ]; then
+    if [ "$CMD" = "opencode" ] || [ "$LINK" = 0 ]; then
+        echo "(note: --cmd $CMD / --no-link uses the direct-download path)"
+        METHOD="zip"
+    else
+        METHOD="apt"
+    fi
 fi
 
-echo "TAG=$TAG"
+stop_ours() {
+    for c in opencode opencode2; do
+        if [ -x "$PREFIX/bin/$c" ] && is_ours "$PREFIX/bin/$c"; then
+            "$PREFIX/bin/$c" service stop >/dev/null 2>&1 || true
+        fi
+    done
+    if command -v pkill >/dev/null 2>&1; then
+        pkill -f "libexec/opencode" >/dev/null 2>&1 || true
+    fi
+}
 
-echo "[2] Installing dependencies..."
+# ── package-manager path ─────────────────────────────────────────────
+install_apt() {
+    command -v pkg >/dev/null 2>&1 ||
+        die "pkg not found — the package-manager path needs Termux (use --zip elsewhere)"
+    command -v curl >/dev/null 2>&1 || pkg install -y curl
 
-pkg update -y
-pkg install -y curl unzip grep ripgrep libc++ coreutils
+    echo "[1] Checking for a foreign 'opencode'..."
 
-echo "[3] Creating temporary directory..."
+    # dpkg-owned v1 is handled by the deb itself (Conflicts/Replaces); only a
+    # hand-installed file needs the explicit guard. Runs first so a refusal
+    # happens before anything is registered or downloaded.
+    L="$PREFIX/bin/opencode"
+    if { [ -e "$L" ] || [ -L "$L" ]; } && ! is_ours "$L" && ! owner_of "$L" | grep -q .; then
+        if [ "$FORCE" = 1 ]; then
+            echo "WARNING: replacing existing $L (--force)"
+        else
+            die "$L already exists and is not managed by this installer.
+Options:
+  • install without touching it:         install.sh --zip --no-link
+    (v2 then runs as \`opencode2\`)
+  • replace it with this build:          install.sh --force
+Nothing was installed."
+        fi
+    fi
 
-TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"' EXIT
+    echo "[2] Registering the package repository..."
 
-cd "$TMP"
+    SOURCES_DIR="$PREFIX/etc/apt/sources.list.d"
+    KEYRING_DIR="$PREFIX/etc/apt/trusted.gpg.d"
+    mkdir -p "$SOURCES_DIR" "$KEYRING_DIR"
 
-echo "[4] Getting release information..."
+    printf 'deb %s stable main\n' "$APT_ROOT" > "$SOURCES_DIR/opencode-android.list"
+    if curl -fL --retry 3 -o "$KEYRING_DIR/opencode-android.gpg.tmp" "$APT_KEY_URL" 2>/dev/null ||
+        curl -fL --retry 3 -o "$KEYRING_DIR/opencode-android.gpg.tmp" "$APT_KEY_FALLBACK"; then
+        mv -f "$KEYRING_DIR/opencode-android.gpg.tmp" \
+            "$KEYRING_DIR/opencode-android.gpg"
+        echo "repository key installed"
+    else
+        rm -f "$KEYRING_DIR/opencode-android.gpg.tmp"
+        die "could not fetch the repository key from
+  $APT_KEY_URL
+  $APT_KEY_FALLBACK
+Nothing was installed."
+    fi
 
-RELEASE_API="https://api.github.com/repos/${REPO}/releases/tags/${TAG}"
+    echo "[3] Updating package lists..."
 
-RELEASE=$(curl -fsSL "$RELEASE_API")
+    pkg update -y
 
-echo "[5] Finding Android ARM64 binary..."
+    echo "[4] Stopping existing OpenCode..."
 
-ZIP=$(printf '%s\n' "$RELEASE" |
-    grep -oE '"name"[[:space:]]*:[[:space:]]*"[^"]*android[^"]*aarch64[^"]*\.zip"' |
-    head -n 1 |
-    cut -d '"' -f 4)
+    stop_ours
+    sleep 1
 
-if [ -z "$ZIP" ]; then
+    echo "[5] Installing opencode2 (re-run any time to update)..."
+
+    pkg install -y opencode2
+
+    echo "[6] Verifying..."
+
+    "$PREFIX/bin/opencode2" --version
+
     echo
-    die "could not find Android ARM64 ZIP. Available release assets:
+    echo "================================"
+    echo " OpenCode installed successfully"
+    echo "================================"
+    echo
+    echo "Installed (package manager):"
+    echo "  $PREFIX/bin/opencode2"
+    echo "  $PREFIX/bin/opencode -> opencode2"
+    echo "  repository: $APT_ROOT"
+    echo
+    echo "Update later like any other program:"
+    echo "  pkg upgrade"
+    echo
+    echo "Uninstall:"
+    echo "  pkg uninstall opencode2"
+    echo
+    echo "Run:"
+    echo "  opencode2 auth   # connect a provider (or: opencode auth)"
+    echo "  opencode2        # TUI (or: opencode)"
+}
+
+# ── direct-download path (legacy) ────────────────────────────────────
+install_zip() {
+    echo "[1] Resolving latest release..."
+
+    API="https://api.github.com/repos/${REPO}/releases/latest"
+
+    TAG=$(curl -fsSL "$API" |
+        awk -F'"' '/"tag_name"/ {print $4; exit}')
+
+    if [ -z "$TAG" ]; then
+        die "could not resolve latest release"
+    fi
+
+    echo "TAG=$TAG"
+
+    echo "[2] Installing dependencies..."
+
+    pkg update -y
+    pkg install -y curl unzip grep ripgrep libc++ coreutils
+
+    echo "[3] Creating temporary directory..."
+
+    TMP=$(mktemp -d)
+    trap 'rm -rf "$TMP"' EXIT
+
+    cd "$TMP"
+
+    echo "[4] Getting release information..."
+
+    RELEASE_API="https://api.github.com/repos/${REPO}/releases/tags/${TAG}"
+
+    RELEASE=$(curl -fsSL "$RELEASE_API")
+
+    echo "[5] Finding Android ARM64 binary..."
+
+    ZIP=$(printf '%s\n' "$RELEASE" |
+        grep -oE '"name"[[:space:]]*:[[:space:]]*"[^"]*android[^"]*aarch64[^"]*\.zip"' |
+        head -n 1 |
+        cut -d '"' -f 4)
+
+    if [ -z "$ZIP" ]; then
+        echo
+        die "could not find Android ARM64 ZIP. Available release assets:
 $(printf '%s\n' "$RELEASE" | grep -oE '"name"[[:space:]]*:[[:space:]]*"[^"]+"' | cut -d '"' -f 4)"
-fi
+    fi
 
-echo "Found: $ZIP"
+    echo "Found: $ZIP"
 
-DOWNLOAD="https://github.com/${REPO}/releases/download/${TAG}/${ZIP}"
+    DOWNLOAD="https://github.com/${REPO}/releases/download/${TAG}/${ZIP}"
 
-echo "[6] Downloading..."
+    echo "[6] Downloading..."
 
-curl -fL --retry 3 -o "$ZIP" "$DOWNLOAD"
+    curl -fL --retry 3 -o "$ZIP" "$DOWNLOAD"
 
-echo "[7] Verifying download (SHA256SUMS)..."
+    echo "[7] Verifying download (SHA256SUMS)..."
 
-if [ "$VERIFY" = 1 ]; then
-    command -v sha256sum >/dev/null 2>&1 ||
-        die "sha256sum missing (coreutils); refusing to install unverified — fix coreutils or pass --no-verify"
-    curl -fL --retry 3 -o SHA256SUMS \
-        "https://github.com/${REPO}/releases/download/${TAG}/SHA256SUMS" ||
-        die "release $TAG has no SHA256SUMS; pass --no-verify only if you accept an unverified download"
-    # 2>/dev/null || true: an unreadable SHA256SUMS must fall through to the
-    # explicit "no entry" error below, not die silently under set -e.
-    EXPECTED=$(awk -v f="$ZIP" '$2 == f {print $1; exit}' SHA256SUMS 2>/dev/null || true)
-    [ -n "$EXPECTED" ] || die "SHA256SUMS contains no entry for $ZIP"
-    ACTUAL=$(sha256sum "$ZIP" | awk '{print $1}')
-    if [ "$EXPECTED" != "$ACTUAL" ]; then
-        die "checksum mismatch for $ZIP
+    if [ "$VERIFY" = 1 ]; then
+        command -v sha256sum >/dev/null 2>&1 ||
+            die "sha256sum missing (coreutils); refusing to install unverified — fix coreutils or pass --no-verify"
+        curl -fL --retry 3 -o SHA256SUMS \
+            "https://github.com/${REPO}/releases/download/${TAG}/SHA256SUMS" ||
+            die "release $TAG has no SHA256SUMS; pass --no-verify only if you accept an unverified download"
+        # 2>/dev/null || true: an unreadable SHA256SUMS must fall through to the
+        # explicit "no entry" error below, not die silently under set -e.
+        EXPECTED=$(awk -v f="$ZIP" '$2 == f {print $1; exit}' SHA256SUMS 2>/dev/null || true)
+        [ -n "$EXPECTED" ] || die "SHA256SUMS contains no entry for $ZIP"
+        ACTUAL=$(sha256sum "$ZIP" | awk '{print $1}')
+        if [ "$EXPECTED" != "$ACTUAL" ]; then
+            die "checksum mismatch for $ZIP
   expected: $EXPECTED
   actual:   $ACTUAL
 The download is corrupt or was tampered with; nothing was installed."
-    fi
-    echo "checksum OK: $ZIP"
-else
-    echo "skipped (--no-verify)"
-fi
-
-echo "[8] Extracting..."
-
-unzip -o "$ZIP"
-
-if [ ! -f opencode2 ]; then
-    die "opencode2 not found in archive"
-fi
-
-if [ ! -f opencode2.bin ]; then
-    die "opencode2.bin not found in archive"
-fi
-
-# ── guard: never silently clobber a command we don't own (e.g. v1) ─────
-TARGET="$PREFIX/bin/$CMD"
-if { [ -e "$TARGET" ] || [ -L "$TARGET" ]; } && ! is_ours "$TARGET"; then
-    OWNER=$(owner_of "$TARGET")
-    if [ "$FORCE" = 1 ]; then
-        echo "WARNING: replacing existing $TARGET (--force)"
-        if [ -n "$OWNER" ]; then echo "  it was provided by: $OWNER"; fi
+        fi
+        echo "checksum OK: $ZIP"
     else
-        if [ "$CMD" = "opencode" ]; then
-            die "$TARGET already exists and is not managed by this installer.
+        echo "skipped (--no-verify)"
+    fi
+
+    echo "[8] Extracting..."
+
+    unzip -o "$ZIP"
+
+    if [ ! -f opencode2 ]; then
+        die "opencode2 not found in archive"
+    fi
+
+    if [ ! -f opencode2.bin ]; then
+        die "opencode2.bin not found in archive"
+    fi
+
+    # ── guard: never silently clobber a command we don't own (e.g. v1) ─────
+    TARGET="$PREFIX/bin/$CMD"
+    if { [ -e "$TARGET" ] || [ -L "$TARGET" ]; } && ! is_ours "$TARGET"; then
+        OWNER=$(owner_of "$TARGET")
+        if [ "$FORCE" = 1 ]; then
+            echo "WARNING: replacing existing $TARGET (--force)"
+            if [ -n "$OWNER" ]; then echo "  it was provided by: $OWNER"; fi
+        else
+            if [ "$CMD" = "opencode" ]; then
+                die "$TARGET already exists and is not managed by this installer.
 ${OWNER:+  It is provided by: $OWNER}
 Options:
   • replace it with this build:          install.sh --cmd opencode --force
@@ -204,111 +342,110 @@ Options:
     a different command name:            install.sh --cmd opencode2 --no-link
     (v2 then runs as \`opencode2\`)
 Nothing was installed."
-        else
-            die "$TARGET already exists and is not managed by this installer.
+            else
+                die "$TARGET already exists and is not managed by this installer.
 ${OWNER:+  It is provided by: $OWNER}
 Options:
   • install without touching it:         install.sh --no-link
   • replace it with this build:          install.sh --force
   • install v2 under a single command:   install.sh --cmd opencode
 Nothing was installed."
+            fi
         fi
     fi
-fi
 
-echo "[9] Stopping existing OpenCode..."
+    echo "[9] Stopping existing OpenCode..."
 
-for c in opencode opencode2; do
-    if [ -x "$PREFIX/bin/$c" ] && is_ours "$PREFIX/bin/$c"; then
-        "$PREFIX/bin/$c" service stop >/dev/null 2>&1 || true
+    stop_ours
+
+    sleep 1
+
+    echo "[10] Installing (command: $CMD)..."
+
+    mkdir -p "$PREFIX/bin"
+    mkdir -p "$PREFIX/libexec/$CMD"
+
+    # The shipped wrapper is named opencode2; rewrite its internal paths when the
+    # user asked for a different command name (--cmd opencode).
+    sed -e "s/opencode2\.bin/${CMD}.bin/g" \
+        -e "s|libexec/opencode2|libexec/${CMD}|g" \
+        -e "s/opencode2: error/${CMD}: error/g" \
+        -e "s/# opencode2 - wrapper/# ${CMD} - wrapper/g" \
+        opencode2 > "$PREFIX/bin/$CMD"
+    chmod 755 "$PREFIX/bin/$CMD"
+    cp -f opencode2.bin "$PREFIX/libexec/$CMD/$CMD.bin"
+    chmod 755 "$PREFIX/libexec/$CMD/$CMD.bin"
+
+    # Ship the license alongside the binary (present in release zips).
+    if [ -f LICENSE ]; then
+        mkdir -p "$PREFIX/share/doc/$CMD"
+        cp -f LICENSE "$PREFIX/share/doc/$CMD/"
     fi
-done
-if command -v pkill >/dev/null 2>&1; then
-    pkill -f "libexec/opencode" >/dev/null 2>&1 || true
-fi
 
-sleep 1
+    echo "[11] Linking 'opencode'..."
 
-echo "[10] Installing (command: $CMD)..."
-
-mkdir -p "$PREFIX/bin"
-mkdir -p "$PREFIX/libexec/$CMD"
-
-# The shipped wrapper is named opencode2; rewrite its internal paths when the
-# user asked for a different command name (--cmd opencode).
-sed -e "s/opencode2\.bin/${CMD}.bin/g" \
-    -e "s|libexec/opencode2|libexec/${CMD}|g" \
-    -e "s/opencode2: error/${CMD}: error/g" \
-    -e "s/# opencode2 - wrapper/# ${CMD} - wrapper/g" \
-    opencode2 > "$PREFIX/bin/$CMD"
-chmod 755 "$PREFIX/bin/$CMD"
-cp -f opencode2.bin "$PREFIX/libexec/$CMD/$CMD.bin"
-chmod 755 "$PREFIX/libexec/$CMD/$CMD.bin"
-
-# Ship the license alongside the binary (present in release zips).
-if [ -f LICENSE ]; then
-    mkdir -p "$PREFIX/share/doc/$CMD"
-    cp -f LICENSE "$PREFIX/share/doc/$CMD/"
-fi
-
-echo "[11] Linking 'opencode'..."
-
-LINK_STATE="not requested"
-if [ "$CMD" = "opencode" ]; then
-    LINK_STATE="runs directly as 'opencode' (no symlink)"
-elif [ "$LINK" = 0 ]; then
-    LINK_STATE="skipped (--no-link)"
-else
-    L="$PREFIX/bin/opencode"
-    if { [ -e "$L" ] || [ -L "$L" ]; } && ! is_ours "$L"; then
-        if [ "$FORCE" = 1 ]; then
-            OWNER=$(owner_of "$L")
-            echo "WARNING: replacing existing $L (--force)"
-            if [ -n "$OWNER" ]; then echo "  it was provided by: $OWNER"; fi
-            ln -sf "$TARGET" "$L"
-            LINK_STATE="replaced (--force)"
-        else
-            LINK_STATE="left untouched (existing '$L' is not ours)"
-            echo
-            echo "  NOTE: $L exists and was left alone (likely a v1 install)."
-            echo "  v2 is installed and runs as:  opencode2"
-            echo "  To make \`opencode\` run v2 instead:"
-            echo "    • remove the old command first (e.g. pkg uninstall <package>),"
-            echo "      or re-run with --force to replace it,"
-            echo "    • or re-run with --no-link to keep both as-is."
-        fi
+    LINK_STATE="not requested"
+    if [ "$CMD" = "opencode" ]; then
+        LINK_STATE="runs directly as 'opencode' (no symlink)"
+    elif [ "$LINK" = 0 ]; then
+        LINK_STATE="skipped (--no-link)"
     else
-        ln -sf "$TARGET" "$L"
-        LINK_STATE="created ($L -> opencode2)"
+        L="$PREFIX/bin/opencode"
+        if { [ -e "$L" ] || [ -L "$L" ]; } && ! is_ours "$L"; then
+            if [ "$FORCE" = 1 ]; then
+                OWNER=$(owner_of "$L")
+                echo "WARNING: replacing existing $L (--force)"
+                if [ -n "$OWNER" ]; then echo "  it was provided by: $OWNER"; fi
+                ln -sf "$TARGET" "$L"
+                LINK_STATE="replaced (--force)"
+            else
+                LINK_STATE="left untouched (existing '$L' is not ours)"
+                echo
+                echo "  NOTE: $L exists and was left alone (likely a v1 install)."
+                echo "  v2 is installed and runs as:  opencode2"
+                echo "  To make \`opencode\` run v2 instead:"
+                echo "    • remove the old command first (e.g. pkg uninstall <package>),"
+                echo "      or re-run with --force to replace it,"
+                echo "    • or re-run with --no-link to keep both as-is."
+            fi
+        else
+            ln -sf "$TARGET" "$L"
+            LINK_STATE="created ($L -> opencode2)"
+        fi
     fi
-fi
 
-echo "[12] Verifying..."
+    echo "[12] Verifying..."
 
-"$PREFIX/bin/$CMD" --version
+    "$PREFIX/bin/$CMD" --version
 
-echo
-echo "================================"
-echo " OpenCode installed successfully"
-echo "================================"
-echo
-echo "Installed:"
-echo "  $PREFIX/bin/$CMD"
-echo "  $PREFIX/libexec/$CMD/$CMD.bin"
-if [ "$CMD" = "opencode2" ]; then
-    echo "  symlink opencode: $LINK_STATE"
-else
-    echo "  opencode link: $LINK_STATE"
-fi
-echo
-echo "Uninstall:"
-echo "  rm -f  $PREFIX/bin/$CMD"
-echo "  rm -rf $PREFIX/libexec/$CMD"
-echo "  rm -f  $PREFIX/share/doc/$CMD/LICENSE"
-if [ "$CMD" = "opencode2" ]; then
-    echo "  rm -f  $PREFIX/bin/opencode   # only if it points to opencode2"
-fi
-echo
-echo "Run:"
-echo "  $CMD auth   # connect a provider"
-echo "  $CMD        # TUI"
+    echo
+    echo "================================"
+    echo " OpenCode installed successfully"
+    echo "================================"
+    echo
+    echo "Installed:"
+    echo "  $PREFIX/bin/$CMD"
+    echo "  $PREFIX/libexec/$CMD/$CMD.bin"
+    if [ "$CMD" = "opencode2" ]; then
+        echo "  symlink opencode: $LINK_STATE"
+    else
+        echo "  opencode link: $LINK_STATE"
+    fi
+    echo
+    echo "Uninstall:"
+    echo "  rm -f  $PREFIX/bin/$CMD"
+    echo "  rm -rf $PREFIX/libexec/$CMD"
+    echo "  rm -f  $PREFIX/share/doc/$CMD/LICENSE"
+    if [ "$CMD" = "opencode2" ]; then
+        echo "  rm -f  $PREFIX/bin/opencode   # only if it points to opencode2"
+    fi
+    echo
+    echo "Run:"
+    echo "  $CMD auth   # connect a provider"
+    echo "  $CMD        # TUI"
+}
+
+case "$METHOD" in
+    apt) install_apt ;;
+    zip) install_zip ;;
+esac

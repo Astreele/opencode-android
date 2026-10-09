@@ -1,5 +1,7 @@
-# Tests for install.sh: release/asset parsing, checksum verification, the
-# v1-clobber guard, --cmd rewriting, and a full install into a sandbox $PREFIX.
+# Tests for install.sh: the default package-manager path (apt repository
+# registration, fake `pkg install opencode2`, v1-clobber guard) and the legacy
+# --zip path (release/asset parsing, checksum verification, --cmd rewriting,
+# full install into a sandbox $PREFIX).
 # Network (`curl`), `pkg`, `pkill` and `sleep` are stubbed — see helpers.bash.
 
 load helpers
@@ -12,10 +14,10 @@ teardown() {
     rm -rf "$SANDBOX"
 }
 
-@test "installs the android aarch64 asset, verifies its checksum and links opencode" {
+@test "--zip installs the android aarch64 asset, verifies its checksum and links opencode" {
     make_good_release
 
-    run_install
+    run_install_zip
     assert_success
 
     # release + asset resolution (decoy armv7 assets must be skipped)
@@ -43,7 +45,7 @@ teardown() {
 @test "fails when the release has no android aarch64 zip and lists what it found" {
     make_release_fixture ""   # no aarch64 asset
 
-    run_install
+    run_install_zip
     assert_failure
     assert_contains "$output" "could not find Android ARM64 ZIP"
     assert_contains "$output" "opencode2-2.0.99-android-armv7.zip"
@@ -53,7 +55,7 @@ teardown() {
 @test "fails when the latest release cannot be resolved" {
     printf '{ }\n' > "$FIXTURE_DIR/latest.json"
 
-    run_install
+    run_install_zip
     assert_failure
     assert_contains "$output" "could not resolve latest release"
 }
@@ -63,7 +65,7 @@ teardown() {
     # valid-looking but wrong digest (64 zeros)
     printf '%064d  %s\n' 0 "$FIXTURE_ZIP" > "$FIXTURE_DIR/SHA256SUMS"
 
-    run_install
+    run_install_zip
     assert_failure
     assert_contains "$output" "checksum mismatch for $FIXTURE_ZIP"
     assert_contains "$output" "nothing was installed"
@@ -75,7 +77,7 @@ teardown() {
     make_good_release
     rm "$FIXTURE_DIR/SHA256SUMS"
 
-    run_install
+    run_install_zip
     assert_failure
     assert_contains "$output" "has no SHA256SUMS"
     assert_file_absent "$PREFIX_DIR/bin/opencode2"
@@ -85,7 +87,7 @@ teardown() {
     make_good_release
     rm "$FIXTURE_DIR/SHA256SUMS"
 
-    run_install --no-verify
+    run_install_zip --no-verify
     assert_success
     assert_contains "$output" "skipped (--no-verify)"
     assert_executable "$PREFIX_DIR/bin/opencode2"
@@ -107,6 +109,8 @@ teardown() {
     run_install --help
     assert_success
     assert_contains "$output" "Usage: install.sh [options]"
+    assert_contains "$output" "--apt"
+    assert_contains "$output" "--zip"
     assert_contains "$output" "--no-verify"
 }
 
@@ -115,7 +119,7 @@ teardown() {
     make_fake_zip "$FIXTURE_DIR/$FIXTURE_ZIP" no-bin
     (cd "$FIXTURE_DIR" && sha256sum "$FIXTURE_ZIP" > SHA256SUMS)
 
-    run_install
+    run_install_zip
     assert_failure
     assert_contains "$output" "opencode2.bin not found in archive"
 }
@@ -126,6 +130,7 @@ teardown() {
 
     run_install --cmd opencode
     assert_failure
+    assert_contains "$output" "uses the direct-download path"
     assert_contains "$output" "already exists and is not managed by this installer"
     assert_contains "$output" "Nothing was installed"
     # the v1 file is untouched and nothing was laid down beside it
@@ -139,6 +144,7 @@ teardown() {
 
     run_install --cmd opencode --force
     assert_success
+    assert_contains "$output" "uses the direct-download path"
     assert_contains "$output" "WARNING: replacing existing $PREFIX_DIR/bin/opencode"
     assert_contains "$(cat "$PREFIX_DIR/bin/opencode")" "wrapper for OpenCode 2 CLI"
 }
@@ -147,7 +153,7 @@ teardown() {
     make_good_release
     make_foreign_opencode
 
-    run_install
+    run_install_zip --zip
     assert_success
     assert_contains "$output" "left untouched (existing '$PREFIX_DIR/bin/opencode' is not ours)"
     assert_contains "$output" "v2 is installed and runs as:  opencode2"
@@ -161,6 +167,7 @@ teardown() {
 
     run_install --no-link
     assert_success
+    assert_contains "$output" "uses the direct-download path"
     assert_contains "$output" "skipped (--no-link)"
     assert_contains "$(cat "$PREFIX_DIR/bin/opencode")" "v1 opencode"
     # --no-link still installs opencode2 itself
@@ -172,6 +179,7 @@ teardown() {
 
     run_install --cmd opencode
     assert_success
+    assert_contains "$output" "uses the direct-download path"
     assert_contains "$output" "runs directly as 'opencode' (no symlink)"
 
     [ -f "$PREFIX_DIR/bin/opencode" ]
@@ -188,4 +196,84 @@ teardown() {
     run "$PREFIX_DIR/bin/opencode" --version
     assert_success
     assert_contains "$output" "9.9.9-test"
+}
+
+# ── package-manager path (default) ───────────────────────────────────
+
+@test "installs opencode2 through the package manager by default" {
+    run_install
+    assert_success
+
+    # repository registration landed under the sandbox prefix
+    assert_contains "$(cat "$PREFIX_DIR/etc/apt/sources.list.d/opencode-android.list")" \
+        "deb https://astreele.github.io/opencode-android stable main"
+    assert_file_exists "$PREFIX_DIR/etc/apt/trusted.gpg.d/opencode-android.gpg"
+
+    # the pkg stub laid the packaged files down like apt would
+    assert_executable "$PREFIX_DIR/bin/opencode2"
+    assert_file_exists "$PREFIX_DIR/libexec/opencode2/opencode2.bin"
+    assert_file_exists "$PREFIX_DIR/share/doc/opencode2/LICENSE"
+    [ -L "$PREFIX_DIR/bin/opencode" ]
+    case "$(readlink "$PREFIX_DIR/bin/opencode")" in
+        *opencode2*) : ;;
+        *) echo "opencode link does not point at opencode2"; return 1 ;;
+    esac
+
+    # installed build answers, and updates are a pkg operation now
+    assert_contains "$output" "9.9.9-test"
+    assert_contains "$output" "OpenCode installed successfully"
+    assert_contains "$output" "pkg upgrade"
+}
+
+@test "re-running the installer is a no-op update check" {
+    run_install
+    assert_success
+    run_install
+    assert_success
+    assert_contains "$output" "9.9.9-test"
+    assert_executable "$PREFIX_DIR/bin/opencode2"
+}
+
+@test "apt path refuses a foreign opencode without --force" {
+    make_foreign_opencode
+
+    run_install
+    assert_failure
+    assert_contains "$output" "already exists and is not managed by this installer"
+    assert_contains "$output" "Nothing was installed"
+    # the guard runs before anything is registered or downloaded
+    assert_contains "$(cat "$PREFIX_DIR/bin/opencode")" "v1 opencode"
+    assert_file_absent "$PREFIX_DIR/etc/apt/sources.list.d"
+    assert_file_absent "$PREFIX_DIR/bin/opencode2"
+}
+
+@test "apt path --force replaces a foreign opencode" {
+    make_foreign_opencode
+
+    run_install --force
+    assert_success
+    assert_contains "$output" "WARNING: replacing existing $PREFIX_DIR/bin/opencode"
+    [ -L "$PREFIX_DIR/bin/opencode" ]
+    assert_executable "$PREFIX_DIR/bin/opencode2"
+}
+
+@test "--apt with --cmd opencode is rejected" {
+    run_install --apt --cmd opencode
+    assert_failure
+    assert_contains "$output" "--cmd opencode needs --zip"
+}
+
+@test "--apt with --no-link is rejected" {
+    run_install --apt --no-link
+    assert_failure
+    assert_contains "$output" "--no-link needs --zip"
+}
+
+@test "apt path fails when the repository key cannot be fetched" {
+    rm "$FIXTURE_DIR/opencode-android.gpg"
+
+    run_install
+    assert_failure
+    assert_contains "$output" "could not fetch the repository key"
+    assert_file_absent "$PREFIX_DIR/bin/opencode2"
 }

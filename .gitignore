@@ -3,6 +3,7 @@
 /out/
 /upstream/
 /dist/
+/apt-repo/
 
 # Package caches
 node_modules/

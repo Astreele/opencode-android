@@ -10,7 +10,7 @@ never touches the real `$PREFIX` and never kills a running `serve` daemon.
 
 ```sh
 bash tests/run.sh                  # syntax checks + all suites
-bash tests/run.sh install          # one suite (install, package, wrapper, vendor)
+bash tests/run.sh install          # one suite (install, package, wrapper, vendor, apt-repo)
 bash tests/run.sh --update-golden  # refresh tests/golden/vendor.sha256
 ```
 
@@ -22,7 +22,8 @@ CI installs it with `apt-get install bats`.
 
 | Suite | Covers | Needs |
 |---|---|---|
-| `install.bats` | `install.sh`: release/asset parsing, checksum verification (fail + `--no-verify`), v1-clobber guard, `--cmd` rewriting, full install into a sandbox `$PREFIX` | bash, curl-unrelated stubs (built in) |
+| `install.bats` | `install.sh`: default package-manager path (repo registration, fake `pkg install`, v1-clobber guard) + legacy `--zip` path (release/asset parsing, checksum verification incl. `--no-verify`, `--cmd` rewriting, full install into a sandbox `$PREFIX`) | bash, curl-unrelated stubs (built in) |
+| `apt-repo.bats` | `scripts/apt-repo.sh`: pool staging, `--keep` pruning, `Packages` + `Release` generation, `InRelease`/`Release.gpg` signing | `dpkg-deb`, `gzip`, `xz` (`gpg` for the signing test only) |
 | `package.bats` | `scripts/package.sh`: artifact names, deb fields (Debian revision, `Conflicts`/`Replaces`), maintainer scripts, pacman `.PKGINFO`/install hooks, `SHA256SUMS` | `zip`, `dpkg-deb`, `xz`, `unzip` |
 | `wrapper.bats` | The shipped wrapper: `.bin` resolution in flat/installed/`$PREFIX` layouts, exit-127 failure mode, no sidecar `.so`, no `LD_PRELOAD`/`patchelf` | same as `package.bats` |
 | `vendor.bats` | Vendored natives: golden checksum, sidecar consistency, `scripts/check-elf.sh` gates (bionic aarch64, no glibc/musl/errno shim) + negative gate tests | `readelf`/`nm` (`binutils`) |

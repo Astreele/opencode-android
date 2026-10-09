@@ -1,0 +1,134 @@
+name: apt-repo
+
+# Publishes .deb files from *-android releases to the signed APT repository
+# on the gh-pages branch (https://astreele.github.io/opencode-android).
+# install.sh registers that source, so `pkg install opencode2` works and
+# later updates arrive through `pkg upgrade` like any other program.
+#
+# One-time setup (maintainer):
+#   1. Enable Pages: repo Settings -> Pages -> Deploy from branch -> gh-pages.
+#      (This workflow creates the branch on its first run.)
+#   2. Add the secret APT_GPG_PRIVATE_KEY: base64 of the repo signing key's
+#      private half (see apt/README.md for rotation).
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to publish (empty = every *-android release)'
+        required: false
+        default: ''
+      reset:
+        description: 'Recreate the gh-pages branch from scratch'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+# Serial pushes: two publishers racing on gh-pages corrupt the branch.
+concurrency:
+  group: apt-repo
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PAGES_BRANCH: gh-pages
+    steps:
+      - name: Checkout packaging scripts
+        uses: actions/checkout@v4
+        with:
+          path: src
+
+      - name: Import signing key
+        env:
+          APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+        run: |
+          [ -n "$APT_GPG_PRIVATE_KEY" ] || { echo "APT_GPG_PRIVATE_KEY secret is not set" >&2; exit 1; }
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -p "$GNUPGHOME"
+          chmod 700 "$GNUPGHOME"
+          printf '%s' "$APT_GPG_PRIVATE_KEY" | base64 -d | gpg --batch --import
+          gpg --batch --list-secret-keys
+          echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
+
+      - name: Prepare gh-pages checkout
+        env:
+          RESET_BRANCH: ${{ inputs.reset }}
+        run: |
+          rm -rf "$RUNNER_TEMP/repo"
+          if [ "$RESET_BRANCH" = "true" ]; then
+            echo "reset requested: starting a fresh orphan branch"
+          elif git ls-remote --exit-code --heads \
+              "https://x-access-token:$GH_TOKEN@github.com/${{ github.repository }}.git" \
+              "$PAGES_BRANCH" >/dev/null 2>&1; then
+            git clone --quiet --branch "$PAGES_BRANCH" \
+              "https://x-access-token:$GH_TOKEN@github.com/${{ github.repository }}.git" \
+              "$RUNNER_TEMP/repo"
+            cd "$RUNNER_TEMP/repo" || exit 1
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            exit 0
+          else
+            echo "no $PAGES_BRANCH branch yet: starting a fresh orphan branch"
+          fi
+          mkdir -p "$RUNNER_TEMP/repo"
+          cd "$RUNNER_TEMP/repo" || exit 1
+          git init --quiet
+          git checkout --quiet --orphan "$PAGES_BRANCH"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Download release debs
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/debs"
+          cd "$RUNNER_TEMP/debs" || exit 1
+          if [ -n "$INPUT_TAG" ]; then
+            echo "publishing single tag: $INPUT_TAG"
+            gh release download "$INPUT_TAG" --pattern '*.deb' --clobber
+          else
+            echo "publishing every *-android release"
+            tags="$(gh release list --limit 200 --json tagName --jq '.[].tagName')"
+            found=0
+            for tag in $tags; do
+              case "$tag" in
+                *-android)
+                  if gh release download "$tag" --pattern '*.deb' --clobber 2>/dev/null; then
+                    found=$((found + 1))
+                  else
+                    echo "no .deb assets on $tag, skipping"
+                  fi
+                  ;;
+              esac
+            done
+            [ "$found" -gt 0 ] || { echo "no *-android releases carry a .deb" >&2; exit 1; }
+          fi
+          ls ./*.deb
+
+      - name: Regenerate repository metadata
+        run: |
+          bash "$GITHUB_WORKSPACE/src/scripts/apt-repo.sh" \
+            --repo "$RUNNER_TEMP/repo" \
+            --key-file "$GITHUB_WORKSPACE/src/apt/opencode-android.gpg" \
+            "$RUNNER_TEMP"/debs/*.deb
+
+      - name: Push gh-pages
+        run: |
+          cd "$RUNNER_TEMP/repo" || exit 1
+          git add -A
+          if git diff --cached --quiet; then
+            echo "repository already up to date, nothing to push"
+            exit 0
+          fi
+          git commit --quiet -m "apt-repo: publish $(date -u +%Y-%m-%d)"
+          git push --quiet \
+            "https://x-access-token:$GH_TOKEN@github.com/${{ github.repository }}.git" \
+            "$PAGES_BRANCH"
