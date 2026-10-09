@@ -89,6 +89,30 @@ PKG="$OUT/opencode2-9.9.9-1-aarch64.pkg.tar.xz"
     assert_contains "$(cat "$ctl/postrm")" 'rm -rf "$PREFIX/libexec/opencode2"'
 }
 
+@test "VERSION_SUFFIX=2 produces -2 revisions in deb and pacman names" {
+    # A packaging-only rebuild of the same upstream tag must yield a higher
+    # version, or apt/pacman (rightly) offer no upgrade.
+    build_artifacts "$BATS_FILE_TMPDIR/suf2" 2
+    local deb="$BATS_FILE_TMPDIR/suf2/out/opencode2_9.9.9-2_aarch64.deb"
+    local pkg="$BATS_FILE_TMPDIR/suf2/out/opencode2-9.9.9-2-aarch64.pkg.tar.xz"
+    assert_file_exists "$deb"
+    assert_file_exists "$pkg"
+
+    run dpkg-deb -f "$deb" Version
+    assert_success
+    assert_contains "$output" "9.9.9-2"
+
+    run tar -xOf "$pkg" .PKGINFO
+    assert_success
+    assert_contains "$output" "pkgver = 9.9.9-2"
+}
+
+@test "package.sh rejects a non-positive VERSION_SUFFIX" {
+    run env UPSTREAM_TAG=v9.9.9 VERSION_SUFFIX=0 bash "$REPO_ROOT/scripts/package.sh"
+    assert_failure
+    assert_contains "$output" "VERSION_SUFFIX must be a positive integer"
+}
+
 @test "pacman archive ships .PKGINFO, the install script and the Termux layout" {
     run tar -tf "$PKG"
     assert_success

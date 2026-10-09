@@ -3,7 +3,7 @@
 # (The Termux paths inside are install *targets*, not the build host.)
 # Runs on Linux x86_64 CI and anywhere with zip/dpkg-deb/xz (incl. Termux);
 # `make package UPSTREAM_TAG=...` is the local entry point.
-# Env: REPO_ROOT, UPSTREAM_TAG (e.g. v2.0.24).
+# Env: REPO_ROOT, UPSTREAM_TAG (e.g. v2.0.24), VERSION_SUFFIX (e.g. 2).
 # Inputs: $WORKSPACE/dist/cli/cli-linux-arm64-android/bin/opencode (from build).
 # The renderer is embedded in the binary (bionic lib swapped into the npm musl
 # slot pre-build), so packages carry no sidecar .so.
@@ -15,6 +15,13 @@ WORK="${WORK:-$REPO_ROOT/work}"
 OUT="${OUT:-$REPO_ROOT/out}"
 UPSTREAM_TAG="${UPSTREAM_TAG:?set UPSTREAM_TAG, e.g. v2.0.24}"
 VER="${UPSTREAM_TAG#v}"
+# Debian/pacman revision: rebuilding the same upstream tag with new patches
+# bumps this (2.0.24-1 -> 2.0.24-2) so apt/pacman see a newer version.
+# CI passes the build-weekly `version_suffix` input here; without it the
+# rebuilt .deb would carry the same version and `pkg upgrade` would (rightly)
+# offer nothing.
+VERSION_SUFFIX="${VERSION_SUFFIX:-1}"
+case "$VERSION_SUFFIX" in ''|*[!0-9]*|0) echo "VERSION_SUFFIX must be a positive integer" >&2; exit 1 ;; esac
 
 CLI_BIN="$WORKSPACE/dist/cli/cli-linux-arm64-android/bin/opencode"
 test -x "$CLI_BIN" || { echo "missing CLI binary: $CLI_BIN" >&2; exit 1; }
@@ -82,9 +89,10 @@ ln -sf opencode2 "$PKGROOT/data/data/com.termux/files/usr/bin/opencode"
 mkdir -p "$PKGROOT/data/data/com.termux/files/usr/share/doc/opencode2"
 cp -f "$STAGE/LICENSE" "$PKGROOT/data/data/com.termux/files/usr/share/doc/opencode2/"
 
-# `-1` Debian revision: packaging-only fixes bump it (2.0.24 -> 2.0.24-2) so
-# dpkg/apt see a newer version instead of "same version, nothing to do".
-DEB="$OUT/opencode2_${VER}-1_aarch64.deb"
+# The Debian revision comes from $VERSION_SUFFIX: packaging-only fixes bump
+# it (2.0.24-1 -> 2.0.24-2) so dpkg/apt see a newer version instead of
+# "same version, nothing to do".
+DEB="$OUT/opencode2_${VER}-${VERSION_SUFFIX}_aarch64.deb"
 DEBDIR="$WORK/deb"
 rm -rf "$DEBDIR"
 mkdir -p "$DEBDIR/DEBIAN"
@@ -103,7 +111,7 @@ fi
 INSTALLED_SIZE=$(du -sk "$DEBDIR/data" | cut -f1)
 cat > "$DEBDIR/DEBIAN/control" <<DEOF
 Package: opencode2
-Version: ${VER}-1
+Version: ${VER}-${VERSION_SUFFIX}
 Architecture: aarch64
 Maintainer: opencode-android <noreply@example.com>
 Installed-Size: ${INSTALLED_SIZE}
@@ -191,10 +199,10 @@ chmod 755 "$DEBDIR/DEBIAN/postinst" "$DEBDIR/DEBIAN/prerm" "$DEBDIR/DEBIAN/postr
 dpkg-deb -b "$DEBDIR" "$DEB" >/dev/null
 ls -lh "$DEB"
 
-PACMAN="$OUT/opencode2-${VER}-1-aarch64.pkg.tar.xz"
+PACMAN="$OUT/opencode2-${VER}-${VERSION_SUFFIX}-aarch64.pkg.tar.xz"
 cat > "$PKGROOT/.PKGINFO" <<PEOF
 pkgname = opencode2
-pkgver = ${VER}-1
+pkgver = ${VER}-${VERSION_SUFFIX}
 pkgdesc = OpenCode AI coding assistant for Android/Termux
 url = https://github.com/anomalyco/opencode
 builddate = $(date +%s)

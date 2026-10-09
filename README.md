@@ -224,7 +224,7 @@ make test               # bats suite (TEST=install for one suite)
 make lint               # shellcheck (+ actionlint if installed)
 make check-vendor       # golden checksum + ELF gates for vendor/
 make vendors            # verify vendor cache, stage natives into out/
-make package UPSTREAM_TAG=v2.0.24   # zip/deb/pacman from a prebuilt CLI
+make package UPSTREAM_TAG=v2.0.24   # zip/deb/pacman from a prebuilt CLI (SUFFIX=2 for a packaging-only rebuild)
 make apt-repo           # signed APT repo from out/*.deb (SIGN=0 skips gpg)
 make clean              # remove work/, out/, upstream/, dist/
 ```

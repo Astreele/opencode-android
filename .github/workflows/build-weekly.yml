@@ -307,6 +307,7 @@ jobs:
       - name: Package (zip, deb, pacman)
         env:
           UPSTREAM_TAG: ${{ needs.resolve.outputs.upstream_tag }}
+          VERSION_SUFFIX: ${{ needs.resolve.outputs.version_suffix }}
         run: bash scripts/package.sh
 
       - name: Upload artifacts

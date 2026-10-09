@@ -10,7 +10,7 @@
 #   make lint
 #   make check-vendor
 #   make vendors [VENDORS=all|libopentui|pty] [FORCE=0|1]
-#   make package UPSTREAM_TAG=v2.0.24 [WORKSPACE=...] [WORK=...] [OUT=...]
+#   make package UPSTREAM_TAG=v2.0.24 [WORKSPACE=...] [WORK=...] [OUT=...] [SUFFIX=2]
 #   make apt-repo [REPO_DIR=apt-repo] [OUT=out] [SIGN=1] [KEEP=4]
 #   make clean
 
@@ -21,6 +21,7 @@ FORCE ?= 0
 WORKSPACE ?= $(CURDIR)
 WORK ?= $(CURDIR)/work
 OUT ?= $(CURDIR)/out
+SUFFIX ?= 1
 APT_REPO_DIR ?= $(CURDIR)/apt-repo
 SIGN ?= 1
 KEEP ?= 4
@@ -52,7 +53,7 @@ vendors:
 
 package:
 	@if [ -z "$(UPSTREAM_TAG)" ]; then echo "usage: make package UPSTREAM_TAG=v2.0.24" >&2; exit 1; fi
-	UPSTREAM_TAG="$(UPSTREAM_TAG)" WORKSPACE="$(WORKSPACE)" WORK="$(WORK)" OUT="$(OUT)" bash scripts/package.sh
+	UPSTREAM_TAG="$(UPSTREAM_TAG)" VERSION_SUFFIX="$(SUFFIX)" WORKSPACE="$(WORKSPACE)" WORK="$(WORK)" OUT="$(OUT)" bash scripts/package.sh
 
 apt-repo:
 	bash scripts/apt-repo.sh --repo "$(APT_REPO_DIR)" --keep "$(KEEP)" \

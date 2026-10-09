@@ -211,12 +211,14 @@ make_foreign_opencode() {
 
 # ── package.sh driver ──────────────────────────────────────────────────
 # Build the real artifacts once per bats file. $1 = scratch dir (use
-# $BATS_FILE_TMPDIR); the output lands in "$1/out".
+# $BATS_FILE_TMPDIR); the output lands in "$1/out". $2 = package revision
+# (VERSION_SUFFIX, default 1).
 build_artifacts() {
-    local base="$1"
+    local base="$1" suffix="${2:-1}"
     write_stub_cli "$base/ws/dist/cli/cli-linux-arm64-android/bin/opencode" "9.9.9-test"
     if ! env WORK="$base/work" OUT="$base/out" WORKSPACE="$base/ws" \
-            UPSTREAM_TAG=v9.9.9 bash "$REPO_ROOT/scripts/package.sh" \
+            UPSTREAM_TAG=v9.9.9 VERSION_SUFFIX="$suffix" \
+            bash "$REPO_ROOT/scripts/package.sh" \
             > "$base/package.log" 2>&1; then
         echo "package.sh failed:" >&2
         cat "$base/package.log" >&2
