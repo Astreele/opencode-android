@@ -89,19 +89,22 @@ jobs:
         env:
           INPUT_TAG: ${{ inputs.tag }}
         run: |
+          # -R: GITHUB_WORKSPACE itself is not a git checkout (scripts live
+          # under ./src), so gh cannot infer the repository on its own.
+          REPO="$GITHUB_REPOSITORY"
           mkdir -p "$RUNNER_TEMP/debs"
           cd "$RUNNER_TEMP/debs" || exit 1
           if [ -n "$INPUT_TAG" ]; then
             echo "publishing single tag: $INPUT_TAG"
-            gh release download "$INPUT_TAG" --pattern '*.deb' --clobber
+            gh release download "$INPUT_TAG" --repo "$REPO" --pattern '*.deb' --clobber
           else
             echo "publishing every *-android release"
-            tags="$(gh release list --limit 200 --json tagName --jq '.[].tagName')"
+            tags="$(gh release list --repo "$REPO" --limit 200 --json tagName --jq '.[].tagName')"
             found=0
             for tag in $tags; do
               case "$tag" in
                 *-android)
-                  if gh release download "$tag" --pattern '*.deb' --clobber 2>/dev/null; then
+                  if gh release download "$tag" --repo "$REPO" --pattern '*.deb' --clobber 2>/dev/null; then
                     found=$((found + 1))
                   else
                     echo "no .deb assets on $tag, skipping"
