@@ -1,0 +1,7 @@
+name = "opencode-android-apt"
+main = "worker.js"
+compatibility_date = "2026-10-09"
+
+[vars]
+ORIGIN = "https://astreele.github.io/opencode-android"
+REPO = "Astreele/opencode-android"

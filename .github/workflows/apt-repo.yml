@@ -40,6 +40,9 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       PAGES_BRANCH: gh-pages
+      # pool: store .debs on the branch. none: index only (pool/… is served
+      # by the redirect worker in apt-worker/ — flip once it is live).
+      APT_POOL_MODE: pool
     steps:
       - name: Checkout packaging scripts
         uses: actions/checkout@v4
@@ -118,9 +121,12 @@ jobs:
 
       - name: Regenerate repository metadata
         run: |
+          pool_args=()
+          if [ "${APT_POOL_MODE:-pool}" = none ]; then pool_args+=(--no-pool); fi
           bash "$GITHUB_WORKSPACE/src/scripts/apt-repo.sh" \
             --repo "$RUNNER_TEMP/repo" \
             --key-file "$GITHUB_WORKSPACE/src/apt/opencode-android.gpg" \
+            "${pool_args[@]}" \
             "$RUNNER_TEMP"/debs/*.deb
 
       - name: Push gh-pages

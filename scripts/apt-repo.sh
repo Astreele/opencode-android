@@ -5,9 +5,14 @@
 #       [--key KEYID] [--key-file KEY.GPG] [--keep N] [--no-sign] foo.deb ...
 #
 # Layout produced under DIR:
-#   pool/main/opencode2/*.deb
+#   pool/main/opencode2/*.deb                        (skipped with --no-pool)
 #   dists/stable/main/binary-aarch64/{Packages,Packages.gz,Packages.xz}
 #   dists/stable/{Release,InRelease,Release.gpg}
+#
+# With --no-pool the .debs are hashed from the given files but never stored:
+# the index keeps pool-relative Filenames for an HTTP redirector (see
+# apt-worker/) that serves them from the release page. Only the newest
+# --keep per package are indexed in that mode.
 #
 # Only needs dpkg-deb, gzip, xz and coreutils (+ gpg for signing).
 # Pool keeps the newest --keep debs per package (default 4); older ones are
@@ -21,6 +26,7 @@ KEY=""
 KEY_FILE=""
 KEEP=4
 SIGN=1
+NO_POOL=0
 
 usage() {
     cat <<'EOF'
@@ -32,8 +38,12 @@ Options:
   --component C    Component name (default: main).
   --key KEYID      GPG key to sign with (default: first secret key in GNUPGHOME).
   --key-file FILE  Public key to copy to the repo root as opencode-android.gpg.
-  --keep N         Keep the newest N debs per package in pool/ (default: 4).
+  --keep N         Keep the newest N debs per package (default: 4) —
+                     in pool/ normally, in the index with --no-pool.
   --no-sign        Skip InRelease/Release.gpg (local previews).
+  --no-pool        Do not store .debs under pool/; index the newest --keep
+                     of the given files with pool-relative Filenames for a
+                     redirector (see apt-worker/). Needs at least one .deb.
   -h, --help       Show this help.
 EOF
 }
@@ -58,6 +68,7 @@ while [ $# -gt 0 ]; do
         --keep) KEEP="${2:?--keep needs a number}"; shift 2 ;;
         --keep=*) KEEP="${1#--keep=}"; shift ;;
         --no-sign) SIGN=0; shift ;;
+        --no-pool) NO_POOL=1; shift ;;
         -h|--help) usage; exit 0 ;;
         --) shift; break ;;
         -*) echo "unknown option: $1" >&2; usage >&2; exit 1 ;;
@@ -76,7 +87,10 @@ fi
 
 POOL="$REPO_DIR/pool/$COMPONENT"
 BINDIR="$REPO_DIR/dists/$DIST/$COMPONENT/binary-aarch64"
-mkdir -p "$POOL" "$BINDIR"
+mkdir -p "$BINDIR"
+if [ "$NO_POOL" = 0 ]; then
+    mkdir -p "$POOL"
+fi
 
 # Pool subdir per package (pool/main/opencode2/*.deb).
 pool_subdir() {
@@ -84,24 +98,8 @@ pool_subdir() {
     printf '%s' "$POOL/$1"
 }
 
-# ── 1. stage new debs ────────────────────────────────────────────────
-STAGED=0
-for deb in "$@"; do
-    [ -f "$deb" ] || die "not a file: $deb"
-    base="$(basename "$deb")"
-    dest="$(pool_subdir "$(dpkg-deb -f "$deb" Package)")/$base"
-    if [ -f "$dest" ] && cmp -s "$deb" "$dest"; then
-        echo "keep: $base (identical)"
-    else
-        cp -f "$deb" "$dest"
-        echo "stage: $base"
-    fi
-    STAGED=$((STAGED + 1))
-done
-
-# ── 2. prune to the newest $KEEP per package ─────────────────────────
-# Group pool debs by (Package, Version); sort -V keeps ordering sane even
-# when upstream jumps e.g. 2.0.24 -> 2.0.100.
+# Delete pool debs older than the newest $KEEP per package. sort -V keeps
+# ordering sane even when upstream jumps e.g. 2.0.24 -> 2.0.100.
 prune() {
     local rows="$1/prune.rows" pkg ver file last_pkg="" count=0
     : > "$rows"
@@ -127,19 +125,44 @@ prune() {
     fi
     rm -f "$rows"
 }
-prune "$REPO_DIR"
 
-# ── 3. Packages index (dpkg-deb only — no dpkg-dev needed) ───────────
-# One stanza per deb, concatenated in byte-sorted filename order so output
-# is deterministic regardless of locale.
-mapfile -t SORTED_DEBS < <(for deb in "$POOL"/*/*.deb; do
-    [ -e "$deb" ] && printf '%s\n' "$deb"
-done | LC_ALL=C sort)
+# ── 1+2. stage/prune (pool mode) or select (no-pool mode) ────────────
+STAGED=0
+if [ "$NO_POOL" = 1 ]; then
+    [ $# -gt 0 ] || die "--no-pool needs at least one .deb"
+    # Nothing is stored: index the newest $KEEP per package straight from
+    # the given files. Filenames stay pool-relative for the redirector.
+    mapfile -t SORTED_DEBS < <(for deb in "$@"; do
+        [ -f "$deb" ] || die "not a file: $deb"
+        printf '%s\t%s\t%s\n' "$(dpkg-deb -f "$deb" Package)" \
+            "$(dpkg-deb -f "$deb" Version)" "$deb"
+    done | sort -t "$(printf '\t')" -k1,1 -k2,2Vr \
+        | awk -F "$(printf '\t')" -v keep="$KEEP" '{ if (++n[$1] <= keep) print $3 }' \
+        | LC_ALL=C sort)
+else
+    for deb in "$@"; do
+        [ -f "$deb" ] || die "not a file: $deb"
+        base="$(basename "$deb")"
+        dest="$(pool_subdir "$(dpkg-deb -f "$deb" Package)")/$base"
+        if [ -f "$dest" ] && cmp -s "$deb" "$dest"; then
+            echo "keep: $base (identical)"
+        else
+            cp -f "$deb" "$dest"
+            echo "stage: $base"
+        fi
+        STAGED=$((STAGED + 1))
+    done
+    prune "$REPO_DIR"
+    mapfile -t SORTED_DEBS < <(for deb in "$POOL"/*/*.deb; do
+        [ -e "$deb" ] && printf '%s\n' "$deb"
+    done | LC_ALL=C sort)
+fi
 {
     if [ "${#SORTED_DEBS[@]}" -gt 0 ]; then
         for deb in "${SORTED_DEBS[@]}"; do
-            # Filename is pool-relative: pool/main/opencode2/foo.deb
-            rel="pool/$COMPONENT/$(basename "$(dirname "$deb")")/$(basename "$deb")"
+            # Filename is pool-relative even in --no-pool mode (the
+            # redirector serves it): pool/main/opencode2/foo.deb
+            rel="pool/$COMPONENT/$(dpkg-deb -f "$deb" Package)/$(basename "$deb")"
             for field in Package Version Architecture Maintainer Installed-Size \
                     Depends Conflicts Replaces Section Priority Homepage Description; do
                 val="$(dpkg-deb -f "$deb" "$field" 2>/dev/null || true)"
@@ -215,4 +238,8 @@ if [ -n "$KEY_FILE" ]; then
     echo "key: opencode-android.gpg"
 fi
 
-echo "STAGED=$STAGED pool=$(find "$POOL" -name '*.deb' | wc -l)"
+pool_count=0
+if [ -d "$POOL" ]; then
+    pool_count=$(find "$POOL" -name '*.deb' | wc -l)
+fi
+echo "indexed=${#SORTED_DEBS[@]} pool=$pool_count"

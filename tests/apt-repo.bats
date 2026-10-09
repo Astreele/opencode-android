@@ -101,6 +101,37 @@ run_apt_repo() {
     assert_file_absent "$SCRATCH/repo/dists/stable/Release.gpg"
 }
 
+@test "--no-pool indexes staged versions without storing them" {
+    make_fake_deb 9.9.8 "$SCRATCH/opencode2_9.9.8-1_aarch64.deb"
+    make_fake_deb 9.9.9 "$SCRATCH/opencode2_9.9.9-1_aarch64.deb"
+    make_fake_deb 9.9.7 "$SCRATCH/opencode2_9.9.7-1_aarch64.deb"
+
+    run_apt_repo --repo "$SCRATCH/repo" --no-sign --no-pool --keep 2 \
+        "$SCRATCH"/opencode2_*.deb
+    assert_success
+
+    # nothing stored: the redirector serves pool/ from the release page
+    assert_file_absent "$SCRATCH/repo/pool"
+
+    # ...but the index pins the newest two with pool-relative Filenames
+    local bindir="$SCRATCH/repo/dists/stable/main/binary-aarch64"
+    [ "$(grep -c '^Package: ' "$bindir/Packages")" = 2 ]
+    [ "$(grep -c '^Version: ' "$bindir/Packages")" = 2 ]
+    assert_contains "$(cat "$bindir/Packages")" \
+        "Filename: pool/main/opencode2/opencode2_9.9.9-1_aarch64.deb"
+    assert_contains "$(cat "$bindir/Packages")" \
+        "Filename: pool/main/opencode2/opencode2_9.9.8-1_aarch64.deb"
+    local deb="$SCRATCH/opencode2_9.9.9-1_aarch64.deb"
+    assert_contains "$(cat "$bindir/Packages")" "SHA256: $(sha256sum < "$deb" | awk '{print $1}')"
+    assert_file_absent "$SCRATCH/repo/dists/stable/InRelease"
+}
+
+@test "--no-pool without debs fails fast" {
+    run_apt_repo --repo "$SCRATCH/repo" --no-sign --no-pool
+    assert_failure
+    assert_contains "$output" "--no-pool needs at least one .deb"
+}
+
 @test "re-running with identical debs changes nothing" {
     make_fake_deb 9.9.9 "$SCRATCH/opencode2_9.9.9-1_aarch64.deb"
     run_apt_repo --repo "$SCRATCH/repo" --no-sign \

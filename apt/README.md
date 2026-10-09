@@ -21,11 +21,21 @@ uid: opencode-android <noreply@example.com>
 ## Published layout (gh-pages branch)
 
 ```
-pool/main/opencode2/*.deb                        # kept: newest 4 per package
+pool/main/opencode2/*.deb                        # pool mode only (see below)
 dists/stable/main/binary-aarch64/{Packages,Packages.gz,Packages.xz}
 dists/stable/{Release,InRelease,Release.gpg}
 opencode-android.gpg                             # copy of the key above
 ```
+
+Two modes (`.github/workflows/apt-repo.yml`: `APT_POOL_MODE`):
+
+- `pool` (current): `.deb`s are committed to the branch alongside the
+  metadata; newest 4 kept. Self-contained, but every release adds ~57 MB
+  to the branch history.
+- `none`: metadata only — `Packages` keeps pool-relative `Filename`s and
+  the redirect worker in `apt-worker/` serves them from the release page
+  (apt follows the 302 and hash-verifies as usual). Flip to this once the
+  worker is deployed (go-live checklist in `apt-worker/README.md`).
 
 ## Regenerating locally
 
