@@ -130,6 +130,8 @@ jobs:
             "$RUNNER_TEMP"/debs/*.deb
 
       - name: Push gh-pages
+        env:
+          RESET_BRANCH: ${{ inputs.reset }}
         run: |
           cd "$RUNNER_TEMP/repo" || exit 1
           git add -A
@@ -138,6 +140,14 @@ jobs:
             exit 0
           fi
           git commit --quiet -m "apt-repo: publish $(date -u +%Y-%m-%d)"
-          git push --quiet \
-            "https://x-access-token:$GH_TOKEN@github.com/${{ github.repository }}.git" \
-            "$PAGES_BRANCH"
+          # A reset recreates the branch from an orphan commit, which is
+          # never a fast-forward — force-push only in that mode.
+          if [ "$RESET_BRANCH" = "true" ]; then
+            git push --force --quiet \
+              "https://x-access-token:$GH_TOKEN@github.com/${{ github.repository }}.git" \
+              "$PAGES_BRANCH"
+          else
+            git push --quiet \
+              "https://x-access-token:$GH_TOKEN@github.com/${{ github.repository }}.git" \
+              "$PAGES_BRANCH"
+          fi
