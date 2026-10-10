@@ -5,35 +5,35 @@ Origin: opencode-android
 Label: opencode-android
 Suite: stable
 Codename: stable
-Date: Fri, 09 Oct 2026 15:56:06 UTC
+Date: Sat, 10 Oct 2026 11:34:59 UTC
 Architectures: aarch64
 Components: main
 Description: OpenCode for Android/Termux
 MD5Sum:
-  9ea05d29321501434cb80b87cc647114              715 main/binary-aarch64/Packages
-  40f59400dc3564a386b6c7d4b343d333              484 main/binary-aarch64/Packages.gz
-  982e95e5cc9a8683083cd09fd2dd7186              552 main/binary-aarch64/Packages.xz
+  1cac5602674b077e7f7b023ccf07bd11              715 main/binary-aarch64/Packages
+  0f028997bfe0d1f5ce2f69d8d621d8cf              481 main/binary-aarch64/Packages.gz
+  3ebd638dd7b73486464f56c7f8842535              548 main/binary-aarch64/Packages.xz
 SHA1:
-  7954e39fdc0bb604a8181feb38767848218169ec              715 main/binary-aarch64/Packages
-  6ddd1f742e7a1f898a13d8e6955d682defd6087f              484 main/binary-aarch64/Packages.gz
-  3ce9704fbfdd9e3df0f5573c3e44622b9772752f              552 main/binary-aarch64/Packages.xz
+  aac029d1be787a7a118680e9f1e579e40247759d              715 main/binary-aarch64/Packages
+  24c84b8060b76f1c712d5567b8301ac665aea515              481 main/binary-aarch64/Packages.gz
+  8b602dfc2f930bcc539fba3b32531ae5b570f953              548 main/binary-aarch64/Packages.xz
 SHA256:
-  588284e001766c6e3994c030ca4685ac82228985b27c6a0ab973c2ff814b06ef              715 main/binary-aarch64/Packages
-  9d93350a334610cbe4995acc6d5725b39424a3a9bb9fa92ee2679f6041619364              484 main/binary-aarch64/Packages.gz
-  ec5931edc5ca500d16b03bdfc443723da886bdcbd004a3a63a84959b2f98376a              552 main/binary-aarch64/Packages.xz
+  ba187e0794663da306d037a51924967de5cf6d275dd2b04a3cacb4e717819522              715 main/binary-aarch64/Packages
+  08f3bf20e874926fd26e36d2b0ce7ba415db4e3ff10ab30855d7c2ff24d15191              481 main/binary-aarch64/Packages.gz
+  ff066b4c34bd03fb5f09c72469c5a0d7255d956b3380dc976488c55022ff8f45              548 main/binary-aarch64/Packages.xz
 -----BEGIN PGP SIGNATURE-----
 
-iQIzBAEBCgAdFiEE0Z1YQi49iMPytdH9ATBk2pqcQSQFAmrJDpYACgkQATBk2pqc
-QSSfiQ//c/CbECkZHauH+Le/Epoo5AQP1qZ4h7QKSwBhiviUPcPkXrUR2jaG7Z/i
-C0M0f+higDXn4oQ1IK4SjTsup7PO51sfmInJ8FiLiDpcteWaQo4kkYzvmj7I5Ylc
-3GUMYTdpAbJug3gvVVF1/8yI7HtIfNa6S7SNx0cLAjqJI1DBe8bceEO6ngSueTRV
-U2nyquHq/29jIQ/RkhK563o9Gz7t8B4RvLaX3eNlNXOuRMmY0KknXlXvbIaNgKP7
-IOXcIW/ZTjZ0nctQyrquWbNx0/YhD/KiqcfhDhhC4wlaqYmcnk2qSqllIKUYlUhf
-NXluabAVNzcsCDysH30KUe+eoCRJFwHhy0QeSAbmo1Hw8ITnTPMEFf8uckJ8TpbW
-UvEhxjI82vnxKcBWIDXtRW1dk3i1OFZGszvoTeALGwlLo/I8VrgDBin5PcYPGI/x
-hEQucPha0nEmaidGrVU3EU3hIwkREaMptr2OL/LJ1NtVhG/nR05bNLZiwgx/2sK1
-u0Xrbx8L8lsM1VPP5HxPNtzLmkiO+Hol1ujiqNF4olNRQVN/aEzMzycV7ksoevW+
-S0QSj/Wraq1M1ScilPhkG73Gr6oM8u58IpO7gIvvQmtG+1FfS+tlXBtAAbA5X9Px
-Q1+atq1d6f2RClXMGwvIjGfb0H2qu/7nR1NejRDjtGGq9kaSlco=
-=wn2F
+iQIzBAEBCgAdFiEE0Z1YQi49iMPytdH9ATBk2pqcQSQFAmrKIuMACgkQATBk2pqc
+QSTUWg/8DH4Llo4/FjdYo7NSu7gVKPjNLe20RK5KuLdcU17uX3ePv6nAogiG1bng
+nPo/S4phZBdn/yZp9NgmqtNTsT0b0eLgE5ZODJ4uWt97WC2ux/aV1kJURbCHq0a4
+VaRd7GZ6IsZOAlJUboAzNOwwjFScLhpolzDdqjCJMgCk7CfQk1DkJuZarqupDvIy
+f8QxSKaTWChzKtRh1ZOytTbLcL6Qpn7Cal6LhuK3GhX7CIOD6D9imEXPxixMRgM9
+9kytT1QZGFfy0iZJ5aOkj9a4fzv33pmc3Zjd2BZehk7HjVjh1ixPFRXpU/IJEEDP
+b30DTESRu3nz/Q1Gjn+b8pUSw5IPaKPrBiIoqSMWQWqxjk88he3OQJ0vn7ME4tee
+n6jT9NW5BQcHZ9KSLKilZv3RLUTTBSi2wuOG2waHc9xPBgUDqB/MkDpsKj7o2GkV
+x2AaTzT+MyNxjqHTdsYDEHoa/CiGeOfdoHqADyUBcMvV61KoHILK+OVG0mvnmR1Q
+IrbE7DaunhssYFh8GW8SeoaUD3cLiomw+WdgMzdam8zPKkr6RDqF59SVjuCpCOAh
+v50S136khSqGF9uS1ZEQUJvsJC/OaX1RoYmYuTY3pQXzHpojEmgd102SAe58imDF
+7msDzyRMetnvGX8UBsv3DrgJEeJT6mG78T59Bj8dz9pd3pi/x6Y=
+=kyBX
 -----END PGP SIGNATURE-----
