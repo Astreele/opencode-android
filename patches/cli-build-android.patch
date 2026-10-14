@@ -49,8 +49,7 @@ index f55d890..e89d3ed 100755
          loader: "js",
        }))
      },
-@@ -155,8 +164,12 @@ export default { path: file, version: ${JSON.stringify(opencodePty.version)}, sh
-       OPENCODE_ARTIFACT: `'cli'`,
+@@ -192,7 +201,11 @@
        OPENCODE_LIBC: item.os === "linux" ? `'${item.abi ?? "glibc"}'` : "undefined",
        // FFF_LIBC selects the fff native lib variant: "musl" or "gnu".
 -      FFF_LIBC: item.os === "linux" ? `'${item.abi ?? "gnu"}'` : "undefined",

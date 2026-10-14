@@ -180,6 +180,7 @@ jobs:
 
       - name: Clone upstream + apply patches
         run: |
+          rm -rf upstream
           git clone --depth 1 --branch "${UPSTREAM_TAG}" "https://github.com/${REPO_UPSTREAM}.git" upstream
           cd upstream || exit
           git apply --check ../patches/cli-build-android.patch

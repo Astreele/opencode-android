@@ -21,9 +21,13 @@ echo "==> clone opentui v${OPENTUI_VERSION}"
 if [ ! -d "$WORK/opentui-${OPENTUI_VERSION}/.git" ]; then
   git clone --depth 1 --branch "v${OPENTUI_VERSION}" https://github.com/anomalyco/opentui.git "$WORK/opentui-${OPENTUI_VERSION}"
 fi
-git -C "$WORK/opentui-${OPENTUI_VERSION}" apply --check "$REPO_ROOT/patches/v2-android.patch"
-git -C "$WORK/opentui-${OPENTUI_VERSION}" apply "$REPO_ROOT/patches/v2-android.patch" 2>/dev/null || true
-# idempotent: already-applied is fine, broken-patch is fatal (checked above)
+if git -C "$WORK/opentui-${OPENTUI_VERSION}" apply --reverse --check "$REPO_ROOT/patches/v2-android.patch" 2>/dev/null; then
+  echo "v2-android.patch already applied, skipping"
+else
+  git -C "$WORK/opentui-${OPENTUI_VERSION}" apply --check "$REPO_ROOT/patches/v2-android.patch"
+  git -C "$WORK/opentui-${OPENTUI_VERSION}" apply "$REPO_ROOT/patches/v2-android.patch"
+fi
+# idempotent: already-applied is skipped, broken-patch is fatal (checked above)
 
 echo "==> merged bionic sysroot"
 BIONIC_INC="$WORK/bionic-include"

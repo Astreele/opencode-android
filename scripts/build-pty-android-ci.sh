@@ -41,10 +41,14 @@ if [ ! -d "$WORK/opencode-pty-${PTY_VERSION}/.git" ]; then
   git clone --depth 1 --branch "v${PTY_VERSION}" https://github.com/anomalyco/opencode-pty.git "$WORK/opencode-pty-${PTY_VERSION}"
 fi
 for p in opencode-pty-socket-tmpdir.patch opencode-pty-buildrs-android.patch; do
-  git -C "$WORK/opencode-pty-${PTY_VERSION}" apply --check "$REPO_ROOT/patches/$p"
-  git -C "$WORK/opencode-pty-${PTY_VERSION}" apply "$REPO_ROOT/patches/$p" 2>/dev/null || true
+  if git -C "$WORK/opencode-pty-${PTY_VERSION}" apply --reverse --check "$REPO_ROOT/patches/$p" 2>/dev/null; then
+    echo "$p already applied, skipping"
+  else
+    git -C "$WORK/opencode-pty-${PTY_VERSION}" apply --check "$REPO_ROOT/patches/$p"
+    git -C "$WORK/opencode-pty-${PTY_VERSION}" apply "$REPO_ROOT/patches/$p"
+  fi
 done
-# idempotent: already-applied is fine, broken-patch is fatal (checked above)
+# idempotent: already-applied is skipped, broken-patch is fatal (checked above)
 (
   cd "$WORK/opencode-pty-${PTY_VERSION}"
   rustup target add "$TARGET"
@@ -61,8 +65,12 @@ if [ ! -d "$WORK/bun-pty-${BUN_PTY_VERSION}/.git" ]; then
 fi
 # portable-pty 0.8 pulls termios/serial (no Android target); 0.9 uses serial2.
 # The rust-pty code compiles unchanged (verified on-device).
-git -C "$WORK/bun-pty-${BUN_PTY_VERSION}" apply --check "$REPO_ROOT/patches/bun-pty-portable09.patch"
-git -C "$WORK/bun-pty-${BUN_PTY_VERSION}" apply "$REPO_ROOT/patches/bun-pty-portable09.patch" 2>/dev/null || true
+if git -C "$WORK/bun-pty-${BUN_PTY_VERSION}" apply --reverse --check "$REPO_ROOT/patches/bun-pty-portable09.patch" 2>/dev/null; then
+  echo "bun-pty-portable09.patch already applied, skipping"
+else
+  git -C "$WORK/bun-pty-${BUN_PTY_VERSION}" apply --check "$REPO_ROOT/patches/bun-pty-portable09.patch"
+  git -C "$WORK/bun-pty-${BUN_PTY_VERSION}" apply "$REPO_ROOT/patches/bun-pty-portable09.patch"
+fi
 (
   cd "$WORK/bun-pty-${BUN_PTY_VERSION}/rust-pty"
   rustup target add "$TARGET"
