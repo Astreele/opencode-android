@@ -14,16 +14,16 @@
 #   --force     rebuild even when the vendor files exist (also: FORCE=1)
 #   --commit    git add/commit/push rebuilt vendor files (CI; default: off)
 #   --vendors   all (default), libopentui, pty, or comma combos (also: VENDORS=)
-# Env: REPO_ROOT, OUT, WORK, OPENTUI_VERSION (0.5.16), PTY_VERSION (0.2.0),
-#      BUN_PTY_VERSION (0.4.9), NDK_DIR (/opt/android-ndk), ANDROID_API (29).
+# Env: REPO_ROOT, OUT, WORK, OPENTUI_VERSION (0.5.17), PTY_VERSION (0.2.0),
+#      BUN_PTY_VERSION (0.4.11), NDK_DIR (/opt/android-ndk), ANDROID_API (29).
 set -euo pipefail
 
 REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 OUT="${OUT:-$REPO_ROOT/out}"
 WORK="${WORK:-$REPO_ROOT/work}"
-OPENTUI_VERSION="${OPENTUI_VERSION:-0.5.16}"
+OPENTUI_VERSION="${OPENTUI_VERSION:-0.5.17}"
 PTY_VERSION="${PTY_VERSION:-0.2.0}"
-BUN_PTY_VERSION="${BUN_PTY_VERSION:-0.4.9}"
+BUN_PTY_VERSION="${BUN_PTY_VERSION:-0.4.11}"
 NDK_DIR="${NDK_DIR:-/opt/android-ndk}"
 ANDROID_API="${ANDROID_API:-29}"
 VENDORS="${VENDORS:-all}"
@@ -120,6 +120,11 @@ require_lib_toolchain() {
 require_pty_toolchain() {
     command -v cargo >/dev/null 2>&1 || {
         echo "cargo missing (needed to build pty natives ${PTY_VERSION}/${BUN_PTY_VERSION} from source)" >&2
+        exit 1
+    }
+    # opencode-pty's build.rs shells out to `zig build` (ghostty vt parser).
+    command -v zig >/dev/null 2>&1 || {
+        echo "zig missing (needed to build pty natives ${PTY_VERSION}/${BUN_PTY_VERSION} from source: opencode-pty vendors ghostty via zig)" >&2
         exit 1
     }
     test -x "$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android${ANDROID_API}-clang" || {

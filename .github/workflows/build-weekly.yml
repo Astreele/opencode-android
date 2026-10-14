@@ -136,7 +136,9 @@ jobs:
           bash scripts/build-vendors.sh --plan >> "$GITHUB_OUTPUT"
 
       - name: Install Zig
-        if: steps.vendors.outputs.need_libopentui == 'true'
+        # opencode-pty's build.rs also needs zig (it builds ghostty's vt
+        # parser via `zig build`), so install it for pty builds too.
+        if: steps.vendors.outputs.need_libopentui == 'true' || steps.vendors.outputs.need_pty == 'true'
         run: |
           cd /tmp || exit
           wget -q "https://ziglang.org/download/${ZIG_VERSION}/zig-x86_64-linux-${ZIG_VERSION}.tar.xz" -O zig.tar.xz

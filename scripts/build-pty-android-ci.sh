@@ -6,12 +6,13 @@
 #   2. librust_pty cdylib (sursaone/bun-pty at $BUN_PTY_VERSION, rust-pty crate),
 #      for bun-pty inline sessions (Bun compile embeds librust_pty_arm64.so).
 # Env: REPO_ROOT (this repo), PTY_VERSION, BUN_PTY_VERSION, NDK_DIR, ANDROID_API.
-# Requires: cargo + rustup target aarch64-linux-android + NDK clang.
+# Requires: cargo + rustup target aarch64-linux-android + NDK clang + zig
+# (opencode-pty's build.rs vendors ghostty's vt parser via `zig build`).
 set -euo pipefail
 
 REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 PTY_VERSION="${PTY_VERSION:-0.2.0}"
-BUN_PTY_VERSION="${BUN_PTY_VERSION:-0.4.9}"
+BUN_PTY_VERSION="${BUN_PTY_VERSION:-0.4.11}"
 ANDROID_API="${ANDROID_API:-29}"
 NDK_DIR="${NDK_DIR:-/opt/android-ndk}"
 WORK="${WORK:-$REPO_ROOT/work}"
